@@ -9,6 +9,8 @@
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
 
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+
 
 <style>
     /* === Floating Suggestions Under Caret === */
@@ -114,14 +116,50 @@ code-mix,
           cursor: help;
         }
 
+        .bg-gray {
+          background-color: rgba(231, 231, 232, 0.4);
+        }
+
 </style>
         
 </head>
 
 <body>
     <div class="container mt-4">
-        <h4 class="text-center">OpenBhasha Annotation UX</h4>
+        <h4 class="text-center">OpenBhasha Annotation UX <button type="button" class="btn btn-outline-primary btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#guidelinesModal">
+            <i class="bi bi-info-circle"></i> Shortcuts
+          </button></h4>
+        
+  
+  <!-- 📘 Guidelines Modal -->
+  <div class="modal fade" id="guidelinesModal" tabindex="-1" aria-labelledby="guidelinesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-md">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-semibold" id="guidelinesModalLabel">Annotation Shortcuts</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body small">
+  
+          <p><strong>@ Noise Tags:</strong> mark ambient/background sounds.</p>
+          <p class="ms-3 bg-gray rounded p-2"><code>@noise</code>, <code>@background-laughter</code>, <code>@cough</code></p>
+  
 
+          <p><strong># Entities:</strong> <code>#TYPE{verbatim}()</code></p>
+            <p class="ms-3 bg-gray rounded p-2"><code>#ORG{भारतीय रयिलवे}(भारतीय रेल्वे)</code>, <code>#GPE{नयी दिल्ली}(नई ढिल्ली)</code></p>
+
+          <p><strong>[ ] Code-Mix:</strong> native → English.</p>
+            <p class="ms-3 bg-gray rounded p-2"><code>[ट्रेन](train)</code>, <code>[स्टडी](study)</code></p>
+  
+  
+          <p><strong>&lt; &gt; Accent/Mispronunciation:</strong> <code>&lt;wrong&gt;(correct)</code></p>
+            <p class="ms-3 bg-gray rounded p-2"><code>&lt;हमाये&gt;(हमारे)</code>, <code>&lt;समझनाहीं&gt;(समझ नहीं)</code></p>
+  
+        </div>
+      </div>
+    </div>
+  </div>
+  
         <div class="textarea-wrapper">
             <div class="row mt-3">
                 <div class="col-12 col-md-6 mb-3 mb-md-0">
@@ -136,56 +174,7 @@ code-mix,
             </div>
         </div>
 
-        <div class="mt-4">
-            <h5>Guidelines</h5>
-          
-            <!-- Noise Tagging -->
-            <div class="card mb-3">
-              <div class="card-body">
-                <h6 class="card-title">Noise Tagging</h6>
-                <p class="card-text">Use <code>@</code> to insert background or ambient sound tags.</p>
-                <p class="card-text">Examples: <code>@noise</code>, <code>@background-laughter</code>, <code>@cough</code></p>
-              </div>
-            </div>
-          
-            <!-- Code-Mixing -->
-            <div class="card mb-3">
-              <div class="card-body">
-                <h6 class="card-title">Code-Mixing</h6>
-                <p class="card-text">Wrap native text in <code>[ ]</code> and its Latin transliteration or English equivalent in <code>( )</code>.</p>
-                <p class="card-text">Examples: <code>[ट्रेन](train)</code>, <code>[स्टडी](study)</code></p>
-              </div>
-            </div>
-          
-            <!-- Entity Tagging -->
-            <div class="card mb-3">
-              <div class="card-body">
-                <h6 class="card-title">Entity Tagging</h6>
-                <p class="card-text">
-                  Use <code>#</code> to mark named entities. Select or type an entity type (e.g., PERSON, ORG, GPE, etc.), then wrap the entity text inside <code>{ }</code> followed by <code>()</code> for optional notes or attributes.
-                </p>
-                <p class="card-text">Format: <code>#EntityType{verbatim}()</code></p>
-                <p class="card-text">Examples:
-                  <code>#ORG{भारतीय रयिलवे}()</code>,
-                  <code>#ORG{स्टेट बैंक ऑफ इंडिया}()</code>,
-                  <code>#GPE{नई दिल्ली}()</code>,
-                  <code>#PERSON{नरेंद्र मोदी}()</code>
-                </p>
-              </div>
-            </div>
-          
-            <!-- Accent / Mispronunciation -->
-            <div class="card mb-3">
-              <div class="card-body">
-                <h6 class="card-title">Accent / Mispronunciation</h6>
-                <p class="card-text">Wrap mispronounced or accented words in <code>&lt; &gt;</code> and their normalized form in <code>( )</code>.</p>
-                <p class="card-text">Examples:
-                  <code>&lt;हमाये&gt;(हमारे)</code>,
-                  <code>&lt;समझनाहीं&gt;(समझ नहीं)</code>
-                </p>
-              </div>
-            </div>
-          </div>
+
           
     </div>
 
@@ -432,7 +421,7 @@ code-mix,
                 .replace(/<([^>]+?)>\(([^)]+?)\)/g,
                   (_, wrong, correct) =>
                     `<mispronunciation original="${wrong.trim()}"
-                      title="mispronunciation: ${wrong.trim()}"
+                      title="Accent/Mispronunciation: ${wrong.trim()}"
                       data-bs-toggle="tooltip" data-bs-placement="top">${correct.trim()}</mispronunciation>`
                 )
             
