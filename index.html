@@ -147,22 +147,46 @@ code-mix,
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body small">
-  
-          <p><strong>@ Noise Tags:</strong> mark ambient/background sounds.</p>
-          <p class="ms-3 bg-gray rounded p-2"><code>@noise</code>, <code>@background-laughter</code>, <code>@cough</code></p>
-  
 
-          <p><strong># Entities:</strong> <code>#TYPE{verbatim}()</code></p>
-            <p class="ms-3 bg-gray rounded p-2"><code>#ORG{भारतीय रयिलवे}(भारतीय रेल्वे)</code>, <code>#GPE{नयी दिल्ली}(नई ढिल्ली)</code></p>
-
-          <p><strong>[ ] Code-Mix:</strong> native → English.</p>
-            <p class="ms-3 bg-gray rounded p-2"><code>[ट्रेन](train)</code>, <code>[स्टडी](study)</code></p>
-  
-  
-          <p><strong>&lt; &gt; Accent/Mispronunciation:</strong> <code>&lt;wrong&gt;(correct)</code></p>
-            <p class="ms-3 bg-gray rounded p-2"><code>&lt;हमाये&gt;(हमारे)</code>, <code>&lt;समझनाहीं&gt;(समझ नहीं)</code></p>
-  
-        </div>
+            <p><strong>@ &mdash; Noise Tags:</strong> mark ambient/background sounds.</p>
+            <p class="ms-3 bg-gray rounded p-2">
+              <code>@noise</code>, <code>@background-laughter</code>, <code>@cough</code>
+            </p>
+            <div class="ms-3 mb-3">
+              <span class="rendered-rsml">@noise @background-laughter @cough</span>
+            </div>
+          
+            <p><strong># or { } &mdash; Entities:</strong> <code>#TYPE{verbatim}(normalized)</code></p>
+            <p class="ms-3 bg-gray rounded p-2">
+              <code>#ORG{भारतीय रयिलवे}(भारतीय रेल्वे)</code>, 
+              <code>#GPE{नयी दिल्ली}(नई ढिल्ली)</code>, 
+              <code>#NUMBER{उन्नीस सौ पचासी}(1985)</code>
+            </p>
+            <div class="ms-3 mb-3">
+              <span class="rendered-rsml">
+                #ORG{भारतीय रयिलवे}(भारतीय रेल्वे)
+                #GPE{नयी दिल्ली}(नई ढिल्ली)
+                #NUMBER{उन्नीस सौ पचासी}(1985)
+              </span>
+            </div>
+          
+            <p><strong>[ ] &mdash; Code-Mix:</strong> [Native Script](Code-Mixed Script)</p>
+            <p class="ms-3 bg-gray rounded p-2">
+              <code>[ट्रेन](train)</code>, <code>[स्टडी](study)</code>
+            </p>
+            <div class="ms-3 mb-3">
+              <span class="rendered-rsml">[ट्रेन](train) [स्टडी](study)</span>
+            </div>
+          
+            <p><strong>&lt; &gt; &mdash; Accent/Mispronunciation:</strong> <code>&lt;wrong&gt;(correct)</code></p>
+            <p class="ms-3 bg-gray rounded p-2">
+              <code>&lt;हमाये&gt;(हमारे)</code>, <code>&lt;समझनाहीं&gt;(समझ नहीं)</code>
+            </p>
+            <div class="ms-3 mb-3">
+              <span class="rendered-rsml">&lt;हमाये&gt;(हमारे) &lt;समझनाहीं&gt;(समझ नहीं)</span>
+            </div>
+          
+          </div>
       </div>
     </div>
   </div>
@@ -200,8 +224,8 @@ code-mix,
 const entityMap = {
   'PER': 'Person', 'ORG': 'Organization', 'FAC': 'Facility', 'GPE': 'Geo Political Entity',
   'LOC': 'Location', 'PRODUCT': 'Product', 'EVENT': 'Event', 'WORK_OF_ART': 'Artwork',
-  'DATE': 'Date', 'TIME': 'Time', 'MONEY': 'Money', 'PERCENT': 'Percent', 'NUMBER': 'Number',
-  'EMAIL': 'Email ID', 'PHONE': 'Phone Number', 'URL': 'Link/URL'
+  'DATE': 'Date', 'YEAR': 'Year', 'MONTH':'Month', 'Day':'Day', 'TIME': 'Time', 'MONEY': 'Money', 'PERCENT': 'Percent', 'NUMBER': 'Number',
+  'EMAIL': 'Email ID', 'PHONE': 'Phone Number', 'URL': 'Link/URL', 'GENERIC': 'Generic Entity'
 };
 
 const entityKeys = Object.keys(entityMap); // ['PER', 'ORG', ...]
@@ -487,6 +511,31 @@ textarea.value = `బట్టలు [జీన్స్](jeans) వేసుక
 
 यहाँ पर मैं अपनी [स्टडी](study) के @noise-start बारे में बात कर रहा हूँ। <समझनाहीं>(समझ नहीं) कि @noise-end यह कैसे होगा। {भारतीय रयिलवे}(भारतीय रेल्वे) और #ORG{इंडियन रेलवे}(Indian Railway) बहुत बड़ा [नेटवर्क](network) है।@background-laughter`;
 RSMDtoRSML();
+</script>
+
+<script>
+   function renderAllExamples() {
+  document.querySelectorAll('.rendered-rsml').forEach(span => {
+    let input = span.textContent || "";
+    input = input.replace(/\n/g, "<br>");
+
+    let rsml = applyCodeMix(input);
+    rsml = applyMispronunciation(rsml);
+    rsml = applyTypedEntities(rsml);
+    rsml = applyGenericEntities(rsml);
+    rsml = applyNoiseTags(rsml);
+
+    span.innerHTML = rsml;
+  });
+
+  activateTooltips();
+}
+
+// Call after DOM is ready or modal is shown
+document.addEventListener('DOMContentLoaded', renderAllExamples);
+
+// Run once modal is loaded
+document.addEventListener('DOMContentLoaded', renderAllExamples);
 </script>
             
 </body>
