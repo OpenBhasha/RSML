@@ -401,76 +401,92 @@ function getCaretCoordinates(el, position) {
 <script>
 const renderBox = document.getElementById("rendered-transcript");
 
-textarea.addEventListener("input", renderTranscript);
+textarea.addEventListener("input", RSMDtoRSML);
 
-function renderTranscript() {
-  // Step 1 — Replace newlines
-  let text = textarea.value.replace(/\n/g, "<br>");
+// Interpreter entry point
+function RSMDtoRSML() {
+  const input = textarea.value || "";
 
-  // Step 2 — Apply tag transformations
-  const rsml = text
-    // 1. Code-mix  [orig](latin)
-    .replace(/\[([^\]]+?)\]\(([^)]+?)\)/g,
-      (_, orig, latin) =>
-        `<code-mix original="${orig.trim()}" lang="en" script="Latn"
-          title="code-mix: ${orig.trim()}"
-          data-bs-toggle="tooltip" data-bs-placement="top">${latin.trim()}</code-mix>`
-    )
+  // Step 1 — Normalize line breaks
+  let rsml = input.replace(/\n/g, "<br>");
 
-    // 2. Mispronunciation  <wrong>(correct)
-    .replace(/<([^>]+?)>\(([^)]+?)\)/g,
-      (_, wrong, correct) =>
-        `<mispronunciation original="${wrong.trim()}"
-          title="Accent/Mispronunciation: ${wrong.trim()}"
-          data-bs-toggle="tooltip" data-bs-placement="top">${correct.trim()}</mispronunciation>`
-    )
+  // Step 2 — Apply tag interpreters
+  rsml = applyCodeMix(rsml);
+  rsml = applyMispronunciation(rsml);
+  rsml = applyTypedEntities(rsml);
+  rsml = applyGenericEntities(rsml);
+  rsml = applyNoiseTags(rsml);
 
-    // 3A. Entity with type  #TYPE{verbatim}(normalized)
-    .replace(/#(\w+)\{([^}]+?)\}\(([^)]+?)\)/g,
-      (_, type, original, normalized) => {
-        const descriptor = entityMap[type.trim()] || "Unknown Entity";
-        return `<entity type="${type.trim()}" original="${original.trim()}"
-          title="entity: ${descriptor} — ${original.trim()}"
-          data-bs-toggle="tooltip" data-bs-placement="top">${normalized.trim()}</entity>`;
-      }
-    )
-
-    // 3B. Generic entity  {verbatim}(normalized)
-    .replace(/\{([^}]+?)\}\(([^)]+?)\)/g,
-      (_, original, normalized) =>
-        `<entity type="GENERIC" original="${original.trim()}"
-          title="entity: ${original.trim()}"
-          data-bs-toggle="tooltip" data-bs-placement="top">${normalized.trim()}</entity>`
-    )
-
-    // 4. Noise tags  @noise
-    .replace(/@([\w-]+)/g,
-      (_, type) => {
-        if (type.endsWith("-start")) {
-          return `<persistent-noise title="noise: persistent-${type.split("-")[0]}"
-            data-bs-toggle="tooltip" data-bs-placement="top">@${type}`;
-        } else if (type.endsWith("-end")) {
-          return `@${type}</persistent-noise>`;
-        } else {
-          return `<noise original="${type}" title="noise: ${type}"
-            data-bs-toggle="tooltip" data-bs-placement="top">@${type}</noise>`;
-        }
-      }
-    );
-
-  // Step 3 — Render the final HTML
+  // Step 3 — Render HTML
   renderBox.innerHTML = `<p>${rsml}</p>`;
 
   // Step 4 — Activate tooltips
-  const tooltipTriggerList = Array.from(renderBox.querySelectorAll('[data-bs-toggle="tooltip"]'));
-  tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
+  activateTooltips();
+}
+
+function applyCodeMix(text) {
+  return text.replace(/\[([^\]]+?)\]\(([^)]+?)\)/g,
+    (_, orig, latin) =>
+      `<code-mix original="${orig.trim()}" lang="en" script="Latn"
+        title="code-mix: ${orig.trim()}"
+        data-bs-toggle="tooltip" data-bs-placement="top">${latin.trim()}</code-mix>`
+  );
+}
+
+function applyMispronunciation(text) {
+  return text.replace(/<([^>]+?)>\(([^)]+?)\)/g,
+    (_, wrong, correct) =>
+      `<mispronunciation original="${wrong.trim()}"
+        title="Accent/Mispronunciation: ${wrong.trim()}"
+        data-bs-toggle="tooltip" data-bs-placement="top">${correct.trim()}</mispronunciation>`
+  );
+}
+
+function applyTypedEntities(text) {
+  return text.replace(/#(\w+)\{([^}]+?)\}\(([^)]+?)\)/g,
+    (_, type, original, normalized) => {
+      const descriptor = entityMap[type.trim()] || "Unknown Entity";
+      return `<entity type="${type.trim()}" original="${original.trim()}"
+        title="entity: ${descriptor} — ${original.trim()}"
+        data-bs-toggle="tooltip" data-bs-placement="top">${normalized.trim()}</entity>`;
+    }
+  );
+}
+
+function applyGenericEntities(text) {
+  return text.replace(/\{([^}]+?)\}\(([^)]+?)\)/g,
+    (_, original, normalized) =>
+      `<entity type="GENERIC" original="${original.trim()}"
+        title="entity: ${original.trim()}"
+        data-bs-toggle="tooltip" data-bs-placement="top">${normalized.trim()}</entity>`
+  );
+}
+
+function applyNoiseTags(text) {
+  return text.replace(/@([\w-]+)/g, (_, type) => {
+    if (type.endsWith("-start")) {
+      const base = type.split("-")[0];
+      return `<persistent-noise title="noise: persistent-${base}"
+        data-bs-toggle="tooltip" data-bs-placement="top">@${type}`;
+    } else if (type.endsWith("-end")) {
+      return `@${type}</persistent-noise>`;
+    } else {
+      return `<noise original="${type}" title="noise: ${type}"
+        data-bs-toggle="tooltip" data-bs-placement="top">@${type}</noise>`;
+    }
+  });
+}
+
+function activateTooltips() {
+  const tooltipElements = Array.from(renderBox.querySelectorAll('[data-bs-toggle="tooltip"]'));
+  tooltipElements.forEach(el => new bootstrap.Tooltip(el));
 }
 
 // 🧪 Demo text
 textarea.value = `బట్టలు [జీన్స్](jeans) వేసుకోవడం @umm అమ్మాయిలు అబ్బాయిలు కూడా [జీన్స్](jeans) వేసుకొని <ఏందంటే>(ఏంటంటే) లుంగీ పంచెలు ఎక్కువ వేసుకోకుండా ఉండడం అలాంటివి చేస్తారనమాట #GPE{రాయలసీమ}(రాయలసీమ)
 
 यहाँ पर मैं अपनी [स्टडी](study) के @noise-start बारे में बात कर रहा हूँ। <समझनाहीं>(समझ नहीं) कि @noise-end यह कैसे होगा। {भारतीय रयिलवे}(भारतीय रेल्वे) और #ORG{इंडियन रेलवे}(Indian Railway) बहुत बड़ा [नेटवर्क](network) है।@background-laughter`;
-renderTranscript();
+RSMDtoRSML();
 </script>
             
 </body>
