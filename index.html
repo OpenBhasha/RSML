@@ -295,8 +295,23 @@ function handleKeydown(e) {
     e.preventDefault();
     let wrapInsert = "", cursorOffset;
     if (e.key === "[") {
-      wrapInsert = selectedText ? `[${selectedText}]()` : `[]()`;
-      cursorOffset = start + (selectedText ? selectedText.length + 3 : 1);
+    e.preventDefault(); // Prevent default behavior
+
+    const selectedText = window.getSelection().toString().trim();
+    const start = getSelectionStart(); // Define this function based on your editor
+    let wrapInsert = "";
+    let cursorOffset = 0;
+
+    if (selectedText) {
+      const transliterated = await getTransliteration(selectedText, "te", "en");
+      wrapInsert = `[${selectedText}](${transliterated || ""})`;
+      cursorOffset = start + wrapInsert.length;
+    } else {
+      wrapInsert = `[]()`;
+      cursorOffset = start + 1;
+    }
+
+    insertAtCursor(wrapInsert, cursorOffset); // Define this function to insert and move cursor
     } else if (e.key === "{") {
       wrapInsert = selectedText ? `{${selectedText}}()` : `{}()`;
       cursorOffset = start + (selectedText ? selectedText.length + 3 : 1);
