@@ -10,7 +10,6 @@
     />
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
-
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
@@ -874,5 +873,127 @@
       table.appendChild(tbody);
       languageTagsList.appendChild(table);
     </script>
+
+<script>
+  // --- State Management ---
+
+  /**
+   * Creates a state object from the textarea's current properties.
+   * @returns {{value: string, start: number, end: number}}
+   */
+  function getCurrentState() {
+      return {
+          value: textarea.value,
+          start: textarea.selectionStart,
+          end: textarea.selectionEnd
+      };
+  }
+
+  /**
+   * Applies a given state object to the textarea.
+   * @param {{value: string, start: number, end: number}} state
+   */
+  function applyState(state) {
+      textarea.value = state.value;
+      textarea.setSelectionRange(state.start, state.end);
+  }
+
+  // Initialize history with the textarea's initial state
+  let history = [getCurrentState()];
+  
+  // currentStateIndex points to the *current* state in the history
+  let currentStateIndex = 0;
+
+  // A flag to prevent recording an 'input' event caused by our own undo/redo
+  let isApplyingHistory = false;
+
+  /**
+   * Records a new state in the history
+   */
+  function recordState() {
+      // If we are programmatically changing the value (e.g., in undo/redo),
+      // don't record it as a new user action.
+      if (isApplyingHistory) {
+          return;
+      }
+
+      const newState = getCurrentState();
+      const latestState = history[currentStateIndex];
+
+      // Only record if the text value has actually changed
+      if (newState.value !== latestState.value) {
+          // If we've undone steps and then type, we "branch" the history,
+          // discarding the old "redo" states.
+          if (currentStateIndex < history.length - 1) {
+              history = history.slice(0, currentStateIndex + 1);
+          }
+          
+          // Add the new state to the history
+          history.push(newState);
+          currentStateIndex = history.length - 1;
+      }
+  }
+
+  /**
+   * Performs the Undo action
+   */
+  function undo() {
+      if (currentStateIndex > 0) {
+          isApplyingHistory = true; // Set flag
+          currentStateIndex--;
+          applyState(history[currentStateIndex]);
+          isApplyingHistory = false; // Unset flag
+      }
+  }
+
+  /**
+   * Performs the Redo action
+   */
+  function redo() {
+      if (currentStateIndex < history.length - 1) {
+          isApplyingHistory = true; // Set flag
+          currentStateIndex++;
+          applyState(history[currentStateIndex]);
+          isApplyingHistory = false; // Unset flag
+      }
+  }
+
+  // --- Event Listeners ---
+
+  // 1. Listen for text input to record new states
+  textarea.addEventListener('input', recordState);
+
+  // 2. Listen for keyboard shortcuts
+  textarea.addEventListener('keydown', (e) => {
+      // Check for platform-specific modifier key (Cmd on Mac, Ctrl on Windows/Linux)
+      const isModifierKey = e.metaKey || e.ctrlKey;
+
+      // Check for Undo (Cmd/Ctrl + Z, but not Shift+Z)
+      if (isModifierKey && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+          e.preventDefault(); // Stop the browser's native undo
+          undo();
+      }
+      
+      // Check for Redo (Cmd/Ctrl + Y OR Cmd/Ctrl + Shift + Z)
+      const isRedoKey = e.key.toLowerCase() === 'y';
+      const isRedoShiftZ = e.shiftKey && e.key.toLowerCase() === 'z';
+
+      if (isModifierKey && (isRedoKey || isRedoShiftZ)) {
+          e.preventDefault(); // Stop the browser's native redo
+          redo();
+      }
+  });
+  
+  // We also need to record state on 'click' or 'keyup' (for arrow keys)
+  // to ensure the cursor position is saved even if text doesn't change.
+  // However, this can create many "empty" history states.
+  // A simpler approach for this demo is to just save on input.
+  // For a full-fledged textarea, you'd add listeners for 'select', 'click',
+  // and 'keyup' and smartly merge states.
+  
+  // For this implementation, the `input` listener is sufficient for the
+  // core requirement of saving text and cursor *after an input*.
+
+</script>
   </body>
 </html>
