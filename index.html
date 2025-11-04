@@ -313,7 +313,7 @@ code-mix,
             e.preventDefault();
             selectedIndex = (selectedIndex - 1 + currentSuggestions.length) % currentSuggestions.length;
             updateSelection();
-          } else if (e.key === "Enter" && selectedIndex >= 0) {
+          } else if (e.key === "Enter" || e.key === "Tab" && selectedIndex >= 0) {
             e.preventDefault();
             insertTag(currentSuggestions[selectedIndex]);
           } else if (e.key === "Escape") {
