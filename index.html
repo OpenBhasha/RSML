@@ -1,323 +1,505 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RSML Annotation UX</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
+    />
 
+    <style>
+      /* === Floating Suggestions Under Caret === */
+      #tag-suggestions {
+        position: fixed; /* absolute won't follow scrolling properly */
+        z-index: 99999;
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.15);
+        min-width: 160px;
+        max-width: 280px;
+        max-height: 200px;
+        overflow-y: auto;
+        display: none;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.9rem;
+        color: #222;
+        padding: 4px 0;
+        animation: fadeIn 0.12s ease-in;
+        pointer-events: auto;
+      }
 
-<style>
-    /* === Floating Suggestions Under Caret === */
-#tag-suggestions {
-  position: fixed; /* absolute won't follow scrolling properly */
-  z-index: 99999;
-  background: #fff;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.15);
-  min-width: 160px;
-  max-width: 280px;
-  max-height: 200px;
-  overflow-y: auto;
-  display: none;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.9rem;
-  color: #222;
-  padding: 4px 0;
-  animation: fadeIn 0.12s ease-in;
-  pointer-events: auto;
-}
+      /* === Suggestion Items === */
+      .suggestion-item {
+        padding: 5px 10px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
 
-/* === Suggestion Items === */
-.suggestion-item {
-  padding: 5px 10px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+      .suggestion-item.active,
+      .suggestion-item:hover {
+        background-color: #007bff;
+        color: #fff;
+      }
 
-.suggestion-item.active,
-.suggestion-item:hover {
-  background-color: #007bff;
-  color: #fff;
-}
+      /* === Scrollbar === */
+      #tag-suggestions::-webkit-scrollbar {
+        width: 6px;
+      }
+      #tag-suggestions::-webkit-scrollbar-thumb {
+        background: #bbb;
+        border-radius: 3px;
+      }
+      #tag-suggestions::-webkit-scrollbar-thumb:hover {
+        background: #999;
+      }
 
-/* === Scrollbar === */
-#tag-suggestions::-webkit-scrollbar {
-  width: 6px;
-}
-#tag-suggestions::-webkit-scrollbar-thumb {
-  background: #bbb;
-  border-radius: 3px;
-}
-#tag-suggestions::-webkit-scrollbar-thumb:hover {
-  background: #999;
-}
-
-/* === Fade animation === */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-3px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* === Common Annotation Styles === */
-code-mix,
-        mispronunciation,
-        entity,
-        noise,
-        persistent-noise {
-          display: inline-block !important;
-          padding: 1px 4px;
-          border-radius: 4px;
-          font-size: 0.95em;
+      /* === Fade animation === */
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-3px);
         }
-        
-        /* === Tag Type Specific Styles === */
-        code-mix {
-          background-color: #c8f7ff;
-          border: 1px solid #7fd7ea;
+        to {
+          opacity: 1;
+          transform: translateY(0);
         }
-        
-        mispronunciation {
-          background-color: #ffd1a8;
-          border: 1px solid #ffae70;
-        }
-        
-        noise {
-          background-color: #888;
-          color: white;
-          border: 1px solid #666;
-        }
+      }
 
-        persistent-noise {
-          background-color: #d7d7d7;
-          color: black;
-          border: 1px solid #d7d7d7;
-        }
-        
-        /* === Entity Base Style === */
-        entity {
-          background-color: #fff7a8;
-          border: 1px solid #e6db65;
-          color: #444;
-          position: relative;
-          cursor: help;
-        }
-        
-        /* === Entity Type Label Inside Entity === */
-        entity .entity-type {
-          font-weight: bold;
-          color: #222;
-          margin-right: 2px;
-        }
-        /* === Tooltip pointer consistency === */
-        [data-bs-toggle="tooltip"] {
-          cursor: help;
-        }
+      /* === Common Annotation Styles === */
+      code-mix,
+      mispronunciation,
+      entity,
+      noise,
+      persistent-noise {
+        display: inline-block !important;
+        padding: 1px 4px;
+        border-radius: 4px;
+        font-size: 0.95em;
+      }
 
-        .bg-gray {
-          background-color: rgba(231, 231, 232, 0.4);
-        }
+      /* === Tag Type Specific Styles === */
+      code-mix {
+        background-color: #c8f7ff;
+        border: 1px solid #7fd7ea;
+      }
 
-</style>
-        
-</head>
+      mispronunciation {
+        background-color: #ffd1a8;
+        border: 1px solid #ffae70;
+      }
 
-<body>
+      noise {
+        background-color: #888;
+        color: white;
+        border: 1px solid #666;
+      }
+
+      persistent-noise {
+        background-color: #d7d7d7;
+        color: black;
+        border: 1px solid #d7d7d7;
+      }
+
+      /* === Entity Base Style === */
+      entity {
+        background-color: #fff7a8;
+        border: 1px solid #e6db65;
+        color: #444;
+        position: relative;
+        cursor: help;
+      }
+
+      /* === Entity Type Label Inside Entity === */
+      entity .entity-type {
+        font-weight: bold;
+        color: #222;
+        margin-right: 2px;
+      }
+      /* === Tooltip pointer consistency === */
+      [data-bs-toggle="tooltip"] {
+        cursor: help;
+      }
+
+      .bg-gray {
+        background-color: rgba(231, 231, 232, 0.4);
+      }
+    </style>
+  </head>
+
+  <body>
     <div class="container mt-4">
-        <h4 class="text-center">RSML Annotation UX <button type="button" class="btn btn-outline-primary btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#guidelinesModal">
-            <i class="bi bi-info-circle"></i> Shortcuts
-          </button></h4>
-        
-  
-  <!-- 📘 Guidelines Modal -->
-  <div class="modal fade" id="guidelinesModal" tabindex="-1" aria-labelledby="guidelinesModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-md">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h6 class="modal-title fw-semibold" id="guidelinesModalLabel">Annotation Shortcuts</h6>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body small">
+      <h4 class="text-center">
+        RSML Annotation UX
+        <button
+          type="button"
+          class="btn btn-outline-primary btn-sm ms-2"
+          data-bs-toggle="modal"
+          data-bs-target="#guidelinesModal"
+        >
+          <i class="bi bi-info-circle"></i> Shortcuts
+        </button>
+      </h4>
 
-            <p><strong>@ &mdash; Noise Tags:</strong> mark ambient/background sounds.</p>
-            <p class="ms-3 bg-gray rounded p-2">
-              <code>@noise</code>, <code>@background-laughter</code>, <code>@cough</code>
-            </p>
-            <div class="ms-3 mb-3">
-              <span class="rendered-rsml">@noise @background-laughter @cough</span>
+      <!-- 📘 Guidelines Modal -->
+      <div
+        class="modal fade"
+        id="guidelinesModal"
+        tabindex="-1"
+        aria-labelledby="guidelinesModalLabel"
+        aria-hidden="true"
+      >
+        <div class="modal-dialog modal-md">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title fw-semibold" id="guidelinesModalLabel">
+                Annotation Shortcuts
+              </h6>
+              <button
+                type="button"
+                class="btn-close"
+                data-bs-dismiss="modal"
+                aria-label="Close"
+              ></button>
             </div>
-          
-            <p><strong># or { } &mdash; Entities:</strong> <code>#TYPE{verbatim}(normalized)</code></p>
-            <p class="ms-3 bg-gray rounded p-2">
-              <code>{सूर्य देव}(सूर्य देव)</code> &mdash; <span class="rendered-rsml">{सूर्य देव}(सूर्य देव)</span> <br>
-              <code>#PER{रमेश}(रमेश)</code> &mdash; <span class="rendered-rsml">#PER{रमेश}(रमेश)</span> <br>
-              <code>#ORG{भारतीय रयिलवे}(भारतीय रेल्वे)</code> &mdash; <span class="rendered-rsml">#ORG{भारतीय रयिलवे}(भारतीय रेल्वे)</span> <br>
-              <code>#GPE{नयी दिल्ली}(नई ढिल्ली)</code> &mdash; <span class="rendered-rsml">#GPE{नयी दिल्ली}(नई ढिल्ली)</span> <br>
-              <code>#YEAR{उन्नीस सौ पचासी}(1985)</code>&mdash; <span class="rendered-rsml">#YEAR{उन्नीस सौ पचासी}(1985)</span> <br> 
-            </p>
-          
-            <p><strong>! or [ ] &mdash; Code-Mix:</strong> [Native Script](Code-Mixed Script)</p>
-            <p class="ms-3 bg-gray rounded p-2">
-              <code>!en[ट्रेन](train)</code>, <code>[स्टडी](study)</code>
-            </p>
-            <div class="ms-3 mb-3">
-              <span class="rendered-rsml">[ट्रेन](train) [स्टडी](study)</span>
+            <div class="modal-body small">
+              <p>
+                <strong>@ &mdash; Noise Tags:</strong> mark ambient/background
+                sounds.
+              </p>
+              <p class="ms-3 bg-gray rounded p-2">
+                <code>@noise</code>, <code>@background-laughter</code>,
+                <code>@cough</code>
+              </p>
+              <div class="ms-3 mb-3">
+                <span class="rendered-rsml"
+                  >@noise @background-laughter @cough</span
+                >
+              </div>
+
+              <p>
+                <strong># or { } &mdash; Entities:</strong>
+                <code>#TYPE{verbatim}(normalized)</code>
+              </p>
+              <p class="ms-3 bg-gray rounded p-2">
+                <code>{सूर्य देव}(सूर्य देव)</code> &mdash;
+                <span class="rendered-rsml">{सूर्य देव}(सूर्य देव)</span> <br />
+                <code>#PER{रमेश}(रमेश)</code> &mdash;
+                <span class="rendered-rsml">#PER{रमेश}(रमेश)</span> <br />
+                <code>#ORG{भारतीय रयिलवे}(भारतीय रेल्वे)</code> &mdash;
+                <span class="rendered-rsml"
+                  >#ORG{भारतीय रयिलवे}(भारतीय रेल्वे)</span
+                >
+                <br />
+                <code>#GPE{नयी दिल्ली}(नई ढिल्ली)</code> &mdash;
+                <span class="rendered-rsml">#GPE{नयी दिल्ली}(नई ढिल्ली)</span>
+                <br />
+                <code>#YEAR{उन्नीस सौ पचासी}(1985)</code>&mdash;
+                <span class="rendered-rsml">#YEAR{उन्नीस सौ पचासी}(1985)</span>
+                <br />
+              </p>
+
+              <p>
+                <strong>! or [ ] &mdash; Code-Mix:</strong> [Native
+                Script](Code-Mixed Script)
+              </p>
+              <p class="ms-3 bg-gray rounded p-2">
+                <code>!en[ट्रेन](train)</code>, <code>[स्टडी](study)</code>
+              </p>
+              <div class="ms-3 mb-3">
+                <span class="rendered-rsml">[ट्रेन](train) [स्टडी](study)</span>
+              </div>
+
+              <p>
+                <strong>&lt; &gt; &mdash; Accent/Mispronunciation:</strong>
+                <code>&lt;wrong&gt;(correct)</code>
+              </p>
+              <p class="ms-3 bg-gray rounded p-2">
+                <code>&lt;हमाये&gt;(हमारे)</code> &mdash;
+                <span class="rendered-rsml">&lt;हमाये&gt;(हमारे)</span> <br />
+                <code>&lt;समझनाहीं&gt;(समझ नहीं)</code> &mdash;
+                <span class="rendered-rsml">&lt;समझनाहीं&gt;(समझ नहीं)</span>
+              </p>
             </div>
-          
-            <p><strong>&lt; &gt; &mdash; Accent/Mispronunciation:</strong> <code>&lt;wrong&gt;(correct)</code></p>
-            <p class="ms-3 bg-gray rounded p-2">
-              <code>&lt;हमाये&gt;(हमारे)</code> &mdash; <span class="rendered-rsml">&lt;हमाये&gt;(हमारे)</span> <br>
-              <code>&lt;समझनाहीं&gt;(समझ नहीं)</code> &mdash; <span class="rendered-rsml">&lt;समझनाहीं&gt;(समझ नहीं)</span>
-            </p>
-          
           </div>
+        </div>
+      </div>
+
+      <div class="textarea-wrapper">
+        <div class="row mt-3">
+          <div class="col-12 col-md-6 mb-3 mb-md-0">
+            <textarea
+              id="tag-textarea"
+              class="form-control"
+              rows="10"
+              placeholder="Type @ for tags, or use {[()}..."
+            ></textarea>
+            <div id="tag-suggestions"></div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div
+              id="rendered-transcript"
+              class="card p-3"
+              style="height: 250px; overflow-y: auto; background: #f9f9f9"
+            ></div>
+          </div>
+        </div>
+      </div>
+      <div class="accordion mt-4" id="tagsAccordion">
+        <div class="accordion-item">
+          <h2 class="accordion-header" id="headingNoise">
+            <button
+              class="accordion-button"
+              type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#collapseNoise"
+              aria-expanded="true"
+              aria-controls="collapseNoise"
+            >
+              Noise/Disfluency Tags
+            </button>
+          </h2>
+          <div
+            id="collapseNoise"
+            class="accordion-collapse collapse show"
+            aria-labelledby="headingNoise"
+            data-bs-parent="#tagsAccordion"
+          >
+            <div class="accordion-body">
+              <ul class="list-unstyled" id="noiseTagsList"></ul>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header" id="headingEntities">
+            <button
+              class="accordion-button collapsed"
+              type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#collapseEntities"
+              aria-expanded="false"
+              aria-controls="collapseEntities"
+            >
+              Entity Tags
+            </button>
+          </h2>
+          <div
+            id="collapseEntities"
+            class="accordion-collapse collapse"
+            aria-labelledby="headingEntities"
+            data-bs-parent="#tagsAccordion"
+          >
+            <div class="accordion-body">
+              <ul class="list-unstyled" id="entityTagsList"></ul>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header" id="headingLanguages">
+            <button
+              class="accordion-button collapsed"
+              type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#collapseLanguages"
+              aria-expanded="false"
+              aria-controls="collapseLanguages"
+            >
+              Supported Languages
+            </button>
+          </h2>
+          <div
+            id="collapseLanguages"
+            class="accordion-collapse collapse"
+            aria-labelledby="headingLanguages"
+            data-bs-parent="#tagsAccordion"
+          >
+            <div class="accordion-body">
+              <ul class="list-unstyled" id="languageTagsList"></ul>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
-  
-        <div class="textarea-wrapper">
-            <div class="row mt-3">
-                <div class="col-12 col-md-6 mb-3 mb-md-0">
-                    <textarea id="tag-textarea" class="form-control" rows="10"
-                        placeholder="Type @ for tags, or use {[()}..."></textarea>
-                    <div id="tag-suggestions"></div>
-                </div>
-                <div class="col-12 col-md-6">
-                    <div id="rendered-transcript" class="card p-3"
-                        style="height: 250px; overflow-y: auto; background: #f9f9f9;"></div>
-                </div>
-            </div>
-        </div>
-        <div class="accordion mt-4" id="tagsAccordion">
-          <div class="accordion-item">
-            <h2 class="accordion-header" id="headingNoise">
-              <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseNoise" aria-expanded="true" aria-controls="collapseNoise">
-          Noise/Disfluency Tags
-              </button>
-            </h2>
-            <div id="collapseNoise" class="accordion-collapse collapse show" aria-labelledby="headingNoise" data-bs-parent="#tagsAccordion">
-              <div class="accordion-body">
-          <ul class="list-unstyled" id="noiseTagsList"></ul>
-              </div>
-            </div>
-          </div>
-          <div class="accordion-item">
-            <h2 class="accordion-header" id="headingEntities">
-              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEntities" aria-expanded="false" aria-controls="collapseEntities">
-          Entity Tags
-              </button>
-            </h2>
-            <div id="collapseEntities" class="accordion-collapse collapse" aria-labelledby="headingEntities" data-bs-parent="#tagsAccordion">
-              <div class="accordion-body">
-          <ul class="list-unstyled" id="entityTagsList"></ul>
-              </div>
-            </div>
-          </div>
-          <div class="accordion-item">
-            <h2 class="accordion-header" id="headingLanguages">
-              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLanguages" aria-expanded="false" aria-controls="collapseLanguages">
-          Supported Languages
-              </button>
-            </h2>
-            <div id="collapseLanguages" class="accordion-collapse collapse" aria-labelledby="headingLanguages" data-bs-parent="#tagsAccordion">
-              <div class="accordion-body">
-          <ul class="list-unstyled" id="languageTagsList"></ul>
-              </div>
-            </div>
-          </div>
-        </div>
-
-          
-    </div>
-
 
     <script>
       const tags = [
-        "@noise", "@noise-start", "@noise-end", "@chatter", "@chatter-start", "@chatter-end",
-        "@background-crying", "@background-laughter", "@background-yelling", "@click", "@static",
-        "@horn", "@traffic", "@music", "@vibration", "@typewriter", "@phone-ringing",
-        "@nose-blowing", "@sneezing", "@humming", "@inhaling", "@laughter", "@cough",
-        "@throat-clearing", "@thumping", "@whispers", "@whispering-start", "@whispering-end",
-        "@whistling", "@yawning", "@yelling", "@breathing", "@eating", "@unintelligible",
-        "@tapping", "@singing-start", "@singing-end", "@ugh", "@uhh", "@umm", "@hmm", "@uh-huh", "@repair-start", "@repair-end", "@emphasis-start", "@emphasis-end", "@repetition-start", "@repetition-end", "@false-start-start", "@false-start-end"
+        // Generic Noise & Background Sounds
+        "@noise",
+        "@noise-start",
+        "@noise-end",
+        "@chatter",
+        "@chatter-start",
+        "@chatter-end",
+        "@background-crying",
+        "@background-laughter",
+        "@background-yelling",
+        "@click",
+        "@static",
+        "@horn",
+        "@traffic",
+        "@music",
+        "@vibration",
+        "@typewriter",
+        "@phone-ringing",
+        "@tapping",
+        "@thumping",
+
+        // Human Vocal Sounds
+        "@laughter",
+        "@laughing-start",
+        "@laughing-end",
+        "@crying",
+        "@crying-start",
+        "@crying-end",
+        "@whispers",
+        "@whispering-start",
+        "@whispering-end",
+        "@whistling",
+        "@yawning",
+        "@yelling",
+        "@humming",
+        "@breathing",
+        "@inhaling",
+        "@cough",
+        "@throat-clearing",
+        "@nose-blowing",
+        "@sneezing",
+        "@eating",
+        "@singing-start",
+        "@singing-end",
+        "@unintelligible",
+
+        // Fillers & Disfluencies
+        "@ugh",
+        "@uhh",
+        "@umm",
+        "@hmm",
+        "@uh-huh",
+        "@repair-start",
+        "@repair-end",
+        "@emphasis-start",
+        "@emphasis-end",
+        "@repetition-start",
+        "@repetition-end",
+        "@false-start-start",
+        "@false-start-end",
       ];
-      
+
       const entityMap = {
-        'PER': 'Person', 'ORG': 'Organization', 'FAC': 'Facility', 'GPE': 'Geo Political Entity',
-        'LOC': 'Location', 'PRODUCT': 'Product', 'EVENT': 'Event', 'WORK_OF_ART': 'Artwork',
-        'DATE': 'Date', 'YEAR': 'Year', 'MONTH': 'Month', 'Day': 'Day', 'TIME': 'Time',
-        'MONEY': 'Money', 'PERCENT': 'Percentage', 'NUMBER': 'Number',
-        'EMAIL': 'Email ID', 'PHONE': 'Phone Number', 'URL': 'Link/URL',
-        'GENERIC': 'Generic Entity'
+        PER: "Person",
+        ORG: "Organization",
+        FAC: "Facility",
+        GPE: "Geo Political Entity",
+        LOC: "Location",
+        PRODUCT: "Product",
+        EVENT: "Event",
+        WORK_OF_ART: "Artwork",
+        DATE: "Date",
+        YEAR: "Year",
+        MONTH: "Month",
+        Day: "Day",
+        TIME: "Time",
+        MONEY: "Money",
+        PERCENT: "Percentage",
+        NUMBER: "Number",
+        EMAIL: "Email ID",
+        PHONE: "Phone Number",
+        URL: "Link/URL",
+        GENERIC: "Generic Entity",
       };
-      
+
       const languageCodes = {
-        'en': 'English', 'hi': 'Hindi', 'bn': 'Bengali', 'mr': 'Marathi', 'te': 'Telugu',
-        'ta': 'Tamil', 'gu': 'Gujarati', 'ur': 'Urdu', 'kn': 'Kannada', 'or': 'Odia',
-        'ml': 'Malayalam', 'pa': 'Punjabi', 'as': 'Assamese', 'mai': 'Maithili',
-        'sat': 'Santali', 'ks': 'Kashmiri', 'ne': 'Nepali', 'sd': 'Sindhi', 'doi': 'Dogri',
-        'kok': 'Konkani', 'mni': 'Manipuri', 'brx': 'Bodo', 'sa': 'Sanskrit'
+        en: "English",
+        hi: "Hindi",
+        bn: "Bengali",
+        mr: "Marathi",
+        te: "Telugu",
+        ta: "Tamil",
+        gu: "Gujarati",
+        ur: "Urdu",
+        kn: "Kannada",
+        or: "Odia",
+        ml: "Malayalam",
+        pa: "Punjabi",
+        as: "Assamese",
+        mai: "Maithili",
+        sat: "Santali",
+        ks: "Kashmiri",
+        ne: "Nepali",
+        sd: "Sindhi",
+        doi: "Dogri",
+        kok: "Konkani",
+        mni: "Manipuri",
+        brx: "Bodo",
+        sa: "Sanskrit",
       };
-      
+
       const entityKeys = Object.keys(entityMap);
       const textarea = document.getElementById("tag-textarea");
       const suggestionsBox = document.getElementById("tag-suggestions");
-      
-      let currentTrigger = '';
+
+      let currentTrigger = "";
       let selectedIndex = -1;
       let currentSuggestions = [];
-      
+
       textarea.addEventListener("input", handleInput);
       textarea.addEventListener("keydown", handleKeydown);
-      
+
       function handleInput() {
-  const cursorPos = textarea.selectionStart;
-  const beforeCursor = textarea.value.slice(0, cursorPos);
+        const cursorPos = textarea.selectionStart;
+        const beforeCursor = textarea.value.slice(0, cursorPos);
 
-  const matchAt = beforeCursor.match(/@[\w-]*$/);
-  const matchHash = beforeCursor.match(/#[A-Za-z_]*$/);
-  const matchBang = beforeCursor.match(/![A-Za-z_]*$/);  // <-- Add this line
+        const matchAt = beforeCursor.match(/@[\w-]*$/);
+        const matchHash = beforeCursor.match(/#[A-Za-z_]*$/);
+        const matchBang = beforeCursor.match(/![A-Za-z_]*$/); // <-- Add this line
 
-  if (matchAt) {
-    currentTrigger = "@";
-    const query = matchAt[0];
-    const filtered = tags.filter(tag => tag.startsWith(query));
-    showSuggestions(filtered.length ? filtered : tags);
-    return;
-  }
+        if (matchAt) {
+          currentTrigger = "@";
+          const query = matchAt[0];
+          const filtered = tags.filter((tag) => tag.startsWith(query));
+          showSuggestions(filtered.length ? filtered : tags);
+          return;
+        }
 
-  if (matchHash) {
-    currentTrigger = "#";
-    const query = matchHash[0].substring(1).toUpperCase();
-    const filtered = entityKeys.filter(key => key.startsWith(query));
-    showSuggestions(filtered.map(key => `${key} (${entityMap[key]})`));
-    return;
-  }
+        if (matchHash) {
+          currentTrigger = "#";
+          const query = matchHash[0].substring(1).toUpperCase();
+          const filtered = entityKeys.filter((key) => key.startsWith(query));
+          showSuggestions(filtered.map((key) => `${key} (${entityMap[key]})`));
+          return;
+        }
 
-  if (matchBang) {
-    currentTrigger = "!";
-    const query = matchBang[0].substring(1).toLowerCase();
-    const filtered = Object.keys(languageCodes).filter(code => code.startsWith(query));
-    showSuggestions(filtered.map(code => `${code} (${languageCodes[code]})`));
-    return;
-  }
+        if (matchBang) {
+          currentTrigger = "!";
+          const query = matchBang[0].substring(1).toLowerCase();
+          const filtered = Object.keys(languageCodes).filter((code) =>
+            code.startsWith(query)
+          );
+          showSuggestions(
+            filtered.map((code) => `${code} (${languageCodes[code]})`)
+          );
+          return;
+        }
 
-  hideSuggestions();
-}
+        hideSuggestions();
+      }
       function handleKeydown(e) {
         const start = textarea.selectionStart;
         const end = textarea.selectionEnd;
         const selectedText = textarea.value.slice(start, end);
-      
+
         // Entity insertion with "#"
         if (e.key === "#") {
           e.preventDefault();
@@ -325,10 +507,12 @@ code-mix,
           textarea.setRangeText(insert, start, end, "end");
           textarea.setSelectionRange(start + 1, start + 1);
           currentTrigger = "#";
-          showSuggestions(entityKeys.map(key => `${key} (${entityMap[key]})`));
+          showSuggestions(
+            entityKeys.map((key) => `${key} (${entityMap[key]})`)
+          );
           return;
         }
-      
+
         // Language code insertion with "!"
         if (e.key === "!") {
           e.preventDefault();
@@ -336,10 +520,14 @@ code-mix,
           textarea.setRangeText(insert, start, end, "end");
           textarea.setSelectionRange(start + 1, start + 1);
           currentTrigger = "!";
-          showSuggestions(Object.keys(languageCodes).map(code => `${code} (${languageCodes[code]})`));
+          showSuggestions(
+            Object.keys(languageCodes).map(
+              (code) => `${code} (${languageCodes[code]})`
+            )
+          );
           return;
         }
-      
+
         // Suggestion navigation
         if (suggestionsBox.style.display !== "none") {
           if (e.key === "ArrowDown") {
@@ -348,20 +536,26 @@ code-mix,
             updateSelection();
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            selectedIndex = (selectedIndex - 1 + currentSuggestions.length) % currentSuggestions.length;
+            selectedIndex =
+              (selectedIndex - 1 + currentSuggestions.length) %
+              currentSuggestions.length;
             updateSelection();
-          } else if (e.key === "Enter" || e.key === "Tab" && selectedIndex >= 0) {
+          } else if (
+            e.key === "Enter" ||
+            (e.key === "Tab" && selectedIndex >= 0)
+          ) {
             e.preventDefault();
             insertTag(currentSuggestions[selectedIndex]);
           } else if (e.key === "Escape") {
             hideSuggestions();
           }
         }
-      
+
         // Bracket wrapping
         if (["[", "{", "<", "("].includes(e.key)) {
           e.preventDefault();
-          let wrapInsert = "", cursorOffset;
+          let wrapInsert = "",
+            cursorOffset;
           if (e.key === "[") {
             wrapInsert = selectedText ? `[${selectedText}]()` : `[]()`;
             cursorOffset = start + (selectedText ? selectedText.length + 3 : 1);
@@ -381,12 +575,12 @@ code-mix,
           return;
         }
       }
-      
+
       function insertTag(rawTag) {
         const tag = rawTag.includes("(") ? rawTag.split(" ")[0] : rawTag;
         const cursorPos = textarea.selectionStart;
         const value = textarea.value;
-      
+
         if (currentTrigger === "#") {
           const iHash = value.lastIndexOf("#", cursorPos);
           const iBrace = value.indexOf("{", iHash);
@@ -402,7 +596,7 @@ code-mix,
             return;
           }
         }
-      
+
         if (currentTrigger === "!") {
           const iEx = value.lastIndexOf("!", cursorPos);
           const iBrack = value.indexOf("[", iEx);
@@ -418,9 +612,11 @@ code-mix,
             return;
           }
         }
-      
+
         if (currentTrigger === "@") {
-          const start = cursorPos - (value.slice(0, cursorPos).match(/@[\w-]*$/)?.[0].length || 1);
+          const start =
+            cursorPos -
+            (value.slice(0, cursorPos).match(/@[\w-]*$/)?.[0].length || 1);
           textarea.setRangeText(tag + " ", start, cursorPos, "end");
           const newPos = start + tag.length + 1;
           textarea.setSelectionRange(newPos, newPos);
@@ -428,26 +624,26 @@ code-mix,
           textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
         }
       }
-      
+
       function showSuggestions(list) {
-        suggestionsBox.innerHTML = '';
+        suggestionsBox.innerHTML = "";
         currentSuggestions = list;
         selectedIndex = 0;
-      
+
         if (!list.length) return hideSuggestions();
-      
+
         list.forEach((item, i) => {
           const div = document.createElement("div");
-          div.className = `suggestion-item${i === 0 ? ' active' : ''}`;
+          div.className = `suggestion-item${i === 0 ? " active" : ""}`;
           div.textContent = item;
           div.addEventListener("click", () => insertTag(item));
           suggestionsBox.appendChild(div);
         });
-      
+
         positionBoxAtCaret();
-        suggestionsBox.style.display = 'block';
+        suggestionsBox.style.display = "block";
       }
-      
+
       function updateSelection() {
         const items = Array.from(suggestionsBox.children);
         items.forEach((el, i) => {
@@ -455,26 +651,30 @@ code-mix,
           if (i === selectedIndex) el.scrollIntoView({ block: "nearest" });
         });
       }
-      
+
       function hideSuggestions() {
-        suggestionsBox.innerHTML = '';
-        suggestionsBox.style.display = 'none';
+        suggestionsBox.innerHTML = "";
+        suggestionsBox.style.display = "none";
         selectedIndex = -1;
         currentSuggestions = [];
       }
-      
+
       function positionBoxAtCaret() {
         const coords = getCaretCoordinates(textarea, textarea.selectionStart);
         const rect = textarea.getBoundingClientRect();
-        suggestionsBox.style.left = `${coords.left + rect.left + window.scrollX}px`;
-        suggestionsBox.style.top = `${coords.top + rect.top + 24 + window.scrollY}px`;
+        suggestionsBox.style.left = `${
+          coords.left + rect.left + window.scrollX
+        }px`;
+        suggestionsBox.style.top = `${
+          coords.top + rect.top + 24 + window.scrollY
+        }px`;
       }
-      
+
       function getCaretCoordinates(el, position) {
         const div = document.createElement("div");
         const style = getComputedStyle(el);
         for (const prop of style) div.style[prop] = style[prop];
-      
+
         div.style.position = "absolute";
         div.style.visibility = "hidden";
         div.style.whiteSpace = "pre-wrap";
@@ -482,7 +682,7 @@ code-mix,
         div.style.overflow = "auto";
         div.style.height = el.offsetHeight + "px";
         div.style.width = el.offsetWidth + "px";
-      
+
         const span = document.createElement("span");
         const text = el.value.substring(0, position);
         const remainder = el.value.substring(position) || ".";
@@ -490,188 +690,189 @@ code-mix,
         span.textContent = remainder;
         div.appendChild(span);
         document.body.appendChild(div);
-      
+
         const top = span.offsetTop - el.scrollTop;
         const left = span.offsetLeft - el.scrollLeft;
         document.body.removeChild(div);
-      
+
         return { top, left };
       }
-      </script>
+    </script>
 
+    <script>
+      const renderBox = document.getElementById("rendered-transcript");
 
-<script>
-const renderBox = document.getElementById("rendered-transcript");
+      textarea.addEventListener("input", RSMDtoRSML);
 
-textarea.addEventListener("input", RSMDtoRSML);
+      // Interpreter entry point
+      function RSMDtoRSML() {
+        const input = textarea.value || "";
 
-// Interpreter entry point
-function RSMDtoRSML() {
-  const input = textarea.value || "";
+        // Step 1 — Normalize line breaks
+        let rsml = input.replace(/\n/g, "<br>");
 
-  // Step 1 — Normalize line breaks
-  let rsml = input.replace(/\n/g, "<br>");
+        // Step 2 — Apply tag interpreters
+        rsml = applyCodeMix(rsml);
+        rsml = applyMispronunciation(rsml);
+        rsml = applyTypedEntities(rsml);
+        rsml = applyGenericEntities(rsml);
+        rsml = applyNoiseTags(rsml);
 
-  // Step 2 — Apply tag interpreters
-  rsml = applyCodeMix(rsml);
-  rsml = applyMispronunciation(rsml);
-  rsml = applyTypedEntities(rsml);
-  rsml = applyGenericEntities(rsml);
-  rsml = applyNoiseTags(rsml);
+        // Step 3 — Render HTML
+        renderBox.innerHTML = `<p>${rsml}</p>`;
 
-  // Step 3 — Render HTML
-  renderBox.innerHTML = `<p>${rsml}</p>`;
+        // Step 4 — Activate tooltips
+        activateTooltips();
+      }
 
-  // Step 4 — Activate tooltips
-  activateTooltips();
-}
-
-function applyCodeMix(text) {
-  // First: Handle !<lang>[native](non-native) format
-  text = text.replace(/!([a-z]{2,5})\[(.+?)\]\((.*?)\)/g,
-    (_, lang, native, romanized) => {
-      const content = romanized.trim() || native.trim();
-      return `<code-mix original="${native.trim()}" lang="${lang.trim()}"
+      function applyCodeMix(text) {
+        // First: Handle !<lang>[native](non-native) format
+        text = text.replace(
+          /!([a-z]{2,5})\[(.+?)\]\((.*?)\)/g,
+          (_, lang, native, romanized) => {
+            const content = romanized.trim() || native.trim();
+            return `<code-mix original="${native.trim()}" lang="${lang.trim()}"
         title="code-mix: ${native.trim()} [${lang.trim()}]"
         data-bs-toggle="tooltip" data-bs-placement="top">${content}</code-mix>`;
-    }
-  );
+          }
+        );
 
-  // Then: Handle [native](non-native) format
-  text = text.replace(/\[([^\]]+?)\]\(([^)]*?)\)/g,
-    (_, native, romanized) => {
-      const content = romanized.trim() || native.trim();
-      return `<code-mix original="${native.trim()}" lang="en"
+        // Then: Handle [native](non-native) format
+        text = text.replace(
+          /\[([^\]]+?)\]\(([^)]*?)\)/g,
+          (_, native, romanized) => {
+            const content = romanized.trim() || native.trim();
+            return `<code-mix original="${native.trim()}" lang="en"
         title="code-mix: ${native.trim()}"
         data-bs-toggle="tooltip" data-bs-placement="top">${content}</code-mix>`;
-    }
-  );
+          }
+        );
 
-  return text;
-}
+        return text;
+      }
 
-function applyMispronunciation(text) {
-  return text.replace(/<([^>]+?)>\(([^)]*?)\)/g,
-    (_, wrong, correct) => {
-      const content = correct.trim() || wrong.trim();
-      return `<mispronunciation original="${wrong.trim()}"
+      function applyMispronunciation(text) {
+        return text.replace(/<([^>]+?)>\(([^)]*?)\)/g, (_, wrong, correct) => {
+          const content = correct.trim() || wrong.trim();
+          return `<mispronunciation original="${wrong.trim()}"
         title="Accent/Mispronunciation: ${wrong.trim()}"
         data-bs-toggle="tooltip" data-bs-placement="top">${content}</mispronunciation>`;
-    }
-  );
-}
+        });
+      }
 
-function applyTypedEntities(text) {
-  return text.replace(/#(\w+)\{([^}]+?)\}\(([^)]*?)\)/g,
-    (_, type, original, normalized) => {
-      const descriptor = entityMap[type.trim()] || "Unknown Entity";
-      const content = normalized.trim() || original.trim();
-      return `<entity type="${type.trim()}" original="${original.trim()}"
+      function applyTypedEntities(text) {
+        return text.replace(
+          /#(\w+)\{([^}]+?)\}\(([^)]*?)\)/g,
+          (_, type, original, normalized) => {
+            const descriptor = entityMap[type.trim()] || "Unknown Entity";
+            const content = normalized.trim() || original.trim();
+            return `<entity type="${type.trim()}" original="${original.trim()}"
         title="entity: ${descriptor} — ${original.trim()}"
         data-bs-toggle="tooltip" data-bs-placement="top">${content}</entity>`;
-    }
-  );
-}
+          }
+        );
+      }
 
-function applyGenericEntities(text) {
-  return text.replace(/\{([^}]+?)\}\(([^)]*?)\)/g,
-    (_, original, normalized) => {
-      const content = normalized.trim() || original.trim();
-      return `<entity type="GENERIC" original="${original.trim()}"
+      function applyGenericEntities(text) {
+        return text.replace(
+          /\{([^}]+?)\}\(([^)]*?)\)/g,
+          (_, original, normalized) => {
+            const content = normalized.trim() || original.trim();
+            return `<entity type="GENERIC" original="${original.trim()}"
         title="entity: ${original.trim()}"
         data-bs-toggle="tooltip" data-bs-placement="top">${content}</entity>`;
-    }
-  );
-}
+          }
+        );
+      }
 
-function applyNoiseTags(text) {
-  return text.replace(/@([\w-]+)/g, (_, type) => {
-    if (type.endsWith("-start")) {
-      const base = type.split("-")[0];
-      return `<persistent-noise title="noise: persistent-${base}"
+      function applyNoiseTags(text) {
+        return text.replace(/@([\w-]+)/g, (_, type) => {
+          if (type.endsWith("-start")) {
+            const base = type.split("-")[0];
+            return `<persistent-noise title="noise: persistent-${base}"
         data-bs-toggle="tooltip" data-bs-placement="top">@${type}`;
-    } else if (type.endsWith("-end")) {
-      return `@${type}</persistent-noise>`;
-    } else {
-      return `<noise original="${type}" title="noise: ${type}"
+          } else if (type.endsWith("-end")) {
+            return `@${type}</persistent-noise>`;
+          } else {
+            return `<noise original="${type}" title="noise: ${type}"
         data-bs-toggle="tooltip" data-bs-placement="top">@${type}</noise>`;
-    }
-  });
-}
+          }
+        });
+      }
 
-function activateTooltips() {
-  const tooltipElements = Array.from(renderBox.querySelectorAll('[data-bs-toggle="tooltip"]'));
-  tooltipElements.forEach(el => new bootstrap.Tooltip(el));
-}
+      function activateTooltips() {
+        const tooltipElements = Array.from(
+          renderBox.querySelectorAll('[data-bs-toggle="tooltip"]')
+        );
+        tooltipElements.forEach((el) => new bootstrap.Tooltip(el));
+      }
 
-// 🧪 Demo text
-textarea.value = `బట్టలు [జీన్స్](jeans) వేసుకోవడం @umm అమ్మాయిలు అబ్బాయిలు కూడా [జీన్స్](jeans) వేసుకొని <ఏందంటే>(ఏంటంటే) లుంగీ పంచెలు ఎక్కువ వేసుకోకుండా ఉండడం అలాంటివి చేస్తారనమాట #GPE{రాయలసీమ}(రాయలసీమ)లో
+      // 🧪 Demo text
+      textarea.value = `బట్టలు [జీన్స్](jeans) వేసుకోవడం @umm అమ్మాయిలు అబ్బాయిలు కూడా [జీన్స్](jeans) వేసుకొని <ఏందంటే>(ఏంటంటే) లుంగీ పంచెలు ఎక్కువ వేసుకోకుండా ఉండడం అలాంటివి చేస్తారనమాట #GPE{రాయలసీమ}(రాయలసీమ)లో
 
 यहाँ पर मैं अपनी [स्टडी](study) के @noise-start बारे में बात कर रहा हूँ। <समझनाहीं>(समझ नहीं) कि @noise-end यह कैसे होगा। {भारतीय रयिलवे}(भारतीय रेल्वे) और #ORG{इंडियन रेलवे}(Indian Railway) बहुत बड़ा [नेटवर्क](network) है।@background-laughter`;
-RSMDtoRSML();
-</script>
+      RSMDtoRSML();
+    </script>
 
-<script>
-   function renderAllExamples() {
-  document.querySelectorAll('.rendered-rsml').forEach(span => {
-    let input = span.textContent || "";
-    input = input.replace(/\n/g, "<br>");
+    <script>
+      function renderAllExamples() {
+        document.querySelectorAll(".rendered-rsml").forEach((span) => {
+          let input = span.textContent || "";
+          input = input.replace(/\n/g, "<br>");
 
-    let rsml = applyCodeMix(input);
-    rsml = applyMispronunciation(rsml);
-    rsml = applyTypedEntities(rsml);
-    rsml = applyGenericEntities(rsml);
-    rsml = applyNoiseTags(rsml);
+          let rsml = applyCodeMix(input);
+          rsml = applyMispronunciation(rsml);
+          rsml = applyTypedEntities(rsml);
+          rsml = applyGenericEntities(rsml);
+          rsml = applyNoiseTags(rsml);
 
-    span.innerHTML = rsml;
-  });
+          span.innerHTML = rsml;
+        });
 
-  activateTooltips();
-}
+        activateTooltips();
+      }
 
-// Call after DOM is ready or modal is shown
-document.addEventListener('DOMContentLoaded', renderAllExamples);
+      // Call after DOM is ready or modal is shown
+      document.addEventListener("DOMContentLoaded", renderAllExamples);
 
-// Run once modal is loaded
-document.addEventListener('DOMContentLoaded', renderAllExamples);
-</script>
-            
-<script>
-  // Populate Noise/Disfluency Tags
-  const noiseTagsList = document.getElementById("noiseTagsList");
-  tags.forEach(tag => {
-    const code = document.createElement("code");
-    code.innerHTML = `${tag}, `;
-    noiseTagsList.appendChild(code);
-  });
+      // Run once modal is loaded
+      document.addEventListener("DOMContentLoaded", renderAllExamples);
+    </script>
 
-  // Populate Entity Tags
-  const entityTagsList = document.getElementById("entityTagsList");
-  Object.entries(entityMap).forEach(([key, value]) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<code>#${key}</code>: ${value}`;
-    entityTagsList.appendChild(li);
-  });
+    <script>
+      // Populate Noise/Disfluency Tags
+      const noiseTagsList = document.getElementById("noiseTagsList");
+      tags.forEach((tag) => {
+        const code = document.createElement("code");
+        code.innerHTML = `${tag}, `;
+        noiseTagsList.appendChild(code);
+      });
 
-  // Populate Supported Languages
-  const languageTagsList = document.getElementById("languageTagsList");
-  const table = document.createElement("table");
-  table.className = "table table-sm table-bordered";
-  const thead = document.createElement("thead");
-  thead.innerHTML = `<tr><th>Code</th><th>Language</th></tr>`;
-  table.appendChild(thead);
-  const tbody = document.createElement("tbody");
+      // Populate Entity Tags
+      const entityTagsList = document.getElementById("entityTagsList");
+      Object.entries(entityMap).forEach(([key, value]) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<code>#${key}</code>: ${value}`;
+        entityTagsList.appendChild(li);
+      });
 
-  Object.entries(languageCodes).forEach(([code, name]) => {
-    const row = document.createElement("tr");
-    row.innerHTML = `<td><code>${code}</code></td><td>${name}</td>`;
-    tbody.appendChild(row);
-  });
+      // Populate Supported Languages
+      const languageTagsList = document.getElementById("languageTagsList");
+      const table = document.createElement("table");
+      table.className = "table table-sm table-bordered";
+      const thead = document.createElement("thead");
+      thead.innerHTML = `<tr><th>Code</th><th>Language</th></tr>`;
+      table.appendChild(thead);
+      const tbody = document.createElement("tbody");
 
-  table.appendChild(tbody);
-  languageTagsList.appendChild(table);
-  
-</script>
-</body>
+      Object.entries(languageCodes).forEach(([code, name]) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td><code>${code}</code></td><td>${name}</td>`;
+        tbody.appendChild(row);
+      });
 
+      table.appendChild(tbody);
+      languageTagsList.appendChild(table);
+    </script>
+  </body>
 </html>
