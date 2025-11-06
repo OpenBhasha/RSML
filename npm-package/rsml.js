@@ -1,6 +1,3 @@
-/* Plain JS RSML Annotation UX — as an npm-friendly single file.
- * UMD export: window.RSMLAnnotator / module.exports / AMD define.
- */
 (function (root, factory) {
   if (typeof define === "function" && define.amd) {
     define([], factory);
@@ -588,7 +585,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           return `</persistent-noise>`;
         } else {
           return `<noise original="${this._esc(type)}" title="noise: ${this._esc(type)}"
-            data-bs-toggle="tooltip" data-bs-placement="top"></noise>`;
+            data-bs-toggle="tooltip" data-bs-placement="top">@${this._esc(type)}</noise>`;
         }
       });
     }

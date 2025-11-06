@@ -1,6 +1,6 @@
 {
   "name": "rsml",
-  "version": "0.1.5",
+  "version": "1.0.1",
   "description": "Rich Speech Markup Language annotation widget for speech transcription and linguistic markup.",
   "main": "rsml.js",
   "module": "rsml.esm.js",
@@ -24,9 +24,6 @@
   ],
   "author": "Radhe Shyam Salopanthula",
   "license": "MIT",
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "build": "echo 'Already built manually'",
     "prepare": "npm run build"
