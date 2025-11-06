@@ -1,0 +1,34 @@
+{
+  "name": "rsml",
+  "version": "0.1.5",
+  "description": "Rich Speech Markup Language annotation widget for speech transcription and linguistic markup.",
+  "main": "rsml.js",
+  "module": "rsml.esm.js",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./rsml.esm.js",
+      "require": "./rsml.js"
+    }
+  },
+  "keywords": [
+    "speech",
+    "linguistics",
+    "annotation",
+    "rsml",
+    "nlp",
+    "text-annotation",
+    "india",
+    "indic",
+    "speech-tech"
+  ],
+  "author": "Radhe Shyam Salopanthula",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "echo 'Already built manually'",
+    "prepare": "npm run build"
+  }
+}
