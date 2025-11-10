@@ -34,7 +34,6 @@ npm install rsml
       <textarea id="tag-textarea" class="form-control" rows="10"
         placeholder="Type @ for tags, # for entities, ! for languages..."
       ></textarea>
-      <div id="tag-suggestions"></div>
     </div>
 
     <div class="col-12 col-md-6">
