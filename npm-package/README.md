@@ -47,7 +47,7 @@ npm install rsml
 
 
 <script type="module">
-  import RSMLAnnotator from "https://cdn.jsdelivr.net/npm/rsml/rsml.esm.js";
+  import RSMLAnnotator from "https://cdn.jsdelivr.net/npm/rsml@latest/rsml.esm.js";
 
   new RSMLAnnotator({
     textarea: "#tag-textarea",
@@ -66,25 +66,53 @@ npm install rsml
 ```
 
 ```jsx
-import RSMLAnnotator from "rsml";
-import { useRef, useEffect } from "react";
-
+import { useEffect, useRef } from "react";
+import RSMLAnnotator from "rsml"; 
 export default function App() {
-  const ta = useRef(null);
-  const out = useRef(null);
+  const textareaRef = useRef(null);
+  const outputRef = useRef(null);
+  const annotatorRef = useRef(null); // 👈 prevent multiple initializations
 
   useEffect(() => {
-    RSMLAnnotator.init({
-      textarea: ta.current,
-      output: out.current
-    });
+    if (
+      textareaRef.current &&
+      outputRef.current &&
+      !annotatorRef.current 
+    ) {
+      annotatorRef.current = new RSMLAnnotator({
+        textarea: textareaRef.current,
+        output: outputRef.current,
+      });
+    }
   }, []);
 
   return (
-    <>
-      <textarea ref={ta} rows="6" />
-      <div ref={out} />
-    </>
+    <div style={{ padding: "2rem" }}>
+      <h2>🗣️ RSML Annotator (React + Vite + CDN ESM)</h2>
+
+      <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
+        <textarea
+          ref={textareaRef}
+          rows="10"
+          style={{ flex: 1, minWidth: "300px", padding: "1rem" }}
+          placeholder="Type @ for tags, # for entities, ! for languages..."
+        />
+
+        <div
+          ref={outputRef}
+          className="rsml-output"
+          style={{
+            flex: 1,
+            minWidth: "300px",
+            minHeight: "250px",
+            overflowY: "auto",
+            padding: "1rem",
+            background: "#f9f9f9",
+            border: "1px solid #ccc",
+          }}
+        />
+      </div>
+    </div>
   );
 }
 ```
