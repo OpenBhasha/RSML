@@ -34,17 +34,15 @@
   <!-- ✅ Textarea + Render -->
   <div class="row mt-3">
     <div class="col-12 col-md-6 mb-3 mb-md-0">
-      <textarea id="tag-textarea" class="form-control" rows="10"
+      <textarea class="form-control tag-textarea" rows="10"
         placeholder="Type @ for tags, # for entities, ! for languages..."
       >यहाँ पर मैं अपनी [स्टडी](study) के @noise-start बारे में बात कर रहा हूँ। <समझनाहीं>(समझ नहीं) कि @noise-end यह कैसे होगा। {भारतीय रयिलवे}(भारतीय रेल्वे) और #ORG{इंडियन रेलवे}(Indian Railway) बहुत बड़ा [नेटवर्क](network) है । @background-laughter
 
 బట్టలు [జీన్స్](jeans) వేసుకోవడం @umm అమ్మాయిలు అబ్బాయిలు కూడా [జీన్స్](jeans) వేసుకొని <ఏందంటే>(ఏంటంటే) లుంగీ పంచెలు ఎక్కువ వేసుకోకుండా ఉండడం అలాంటివి చేస్తారనమాట #GPE{రాయలసీమ}(రాయలసీమ)లో</textarea>
-      <div id="tag-suggestions"></div>
     </div>
 
     <div class="col-12 col-md-6">
-      <div id="rendered-transcript"
-           class="card p-3"
+      <div class="rendered-transcript card p-3"
            style="height: 250px; overflow-y: auto; background: #f9f9f9"></div>
     </div>
   </div>
@@ -162,14 +160,16 @@
         </div>
       </div>
 
-<script type="module">
-  import RSMLAnnotator from "https://cdn.jsdelivr.net/npm/rsml@latest/rsml.esm.js";
-
-  new RSMLAnnotator({
-    textarea: "#tag-textarea",
-    output: "#rendered-transcript"
-  });
-</script>
+      <script type="module">
+        import RSMLAnnotator from "https://cdn.jsdelivr.net/npm/rsml@latest/rsml.esm.js";
+      
+        document.querySelectorAll(".tag-textarea").forEach((textarea, index) => {
+          new RSMLAnnotator({
+            textarea: textarea,
+            output: document.querySelectorAll(".rendered-transcript")[index]
+          });
+        });
+      </script>
 
 <script>
         const tags = [
