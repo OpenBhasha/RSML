@@ -131,7 +131,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     LOC: "Location", PRODUCT: "Product", EVENT: "Event", WORK_OF_ART: "Artwork",
     DATE: "Date", YEAR: "Year", MONTH: "Month", Day: "Day", TIME: "Time", MONEY: "Money",
     PERCENT: "Percentage", NUMBER: "Number", EMAIL: "Email ID", PHONE: "Phone Number",
-    URL: "Link/URL", GENERIC: "Generic Entity",
+    URL: "Link/URL", ENTITY: "Generic Entity",
   };
 
   const DEFAULT_LANGS = {
