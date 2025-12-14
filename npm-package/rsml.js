@@ -173,15 +173,18 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     "@hmm",
     "@uh-huh",
     "@tsk",
-    "@stammering",
-    "@stuttering",
   
+    "@stammer-start",
+    "@stammer-end",
+    "prolongation-start",
+    "prolongation-end",
     "@repair-start",
     "@repair-end",
     "@repetition-start",
     "@repetition-end",
     "@false-start-start",
     "@false-start-end",
+    "@pause",
 
   
     // -------------------------
@@ -262,10 +265,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
   const DEFAULT_ENTITY_MAP = {
     PER: "Person", ORG: "Organization", FAC: "Facility", GPE: "Geo Political Entity",
-    LOC: "Location", PRODUCT: "Product", EVENT: "Event", WORK_OF_ART: "Artwork",
+    LOC: "Location", BRAND: "Brand", PRODUCT: "Product", ACRONYM: "Acronym", TITLE: "Title", EVENT: "Event", WORK_OF_ART: "Artwork",
     DATE: "Date", YEAR: "Year", MONTH: "Month", Day: "Day", TIME: "Time", MONEY: "Money",
     PERCENT: "Percentage", NUMBER: "Number", EMAIL: "Email ID", PHONE: "Phone Number",
-    URL: "Link/URL", ENTITY: "Generic Entity",
+    URL: "Link/URL", LAW: "Law/Policy", ENTITY: "Generic Entity",
   };
 
   const DEFAULT_LANGS = {
