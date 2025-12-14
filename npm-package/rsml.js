@@ -114,17 +114,146 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   }
 
   // ---------- Defaults ----------
-  const DEFAULT_TAGS = [
-    "@noise", "@noise-start", "@noise-end", "@chatter", "@chatter-start", "@chatter-end",
-    "@background-crying", "@background-laughter", "@background-yelling", "@click", "@static",
-    "@horn", "@traffic", "@music", "@vibration", "@typewriter", "@phone-ringing", "@tapping", "@thumping",
-    "@laughter", "@laughing-start", "@laughing-end", "@crying", "@crying-start", "@crying-end",
-    "@singing-start", "@singing-end", "@whistling", "@yawning", "@yelling", "@humming", "@breathing",
-    "@inhaling", "@cough", "@throat-clearing", "@nose-blowing", "@sneezing", "@eating", "@unintelligible",
-    "@whispers", "@whispering-start", "@whispering-end", "@emphasis-start", "@emphasis-end",
-    "@ugh", "@uhh", "@umm", "@hmm", "@uh-huh", "@repair-start", "@repair-end",
-    "@repetition-start", "@repetition-end", "@false-start-start", "@false-start-end",
+  const NOISE_TAGS = [
+
+    // -------------------------
+    // Generic noisy environment (fallback only)
+    // -------------------------
+    "@noise-start",
+    "@noise-end",
+    "@noise",
+  
+    // -------------------------
+    // Backround noisy environments (persistent)
+    // -------------------------
+    "@chatter-start",
+    "@chatter-end",
+  
+    "@tv-start",
+    "@tv-end",
+  
+    "@traffic-start",
+    "@traffic-end",
+  
+    "@music-start",
+    "@music-end",
+
+
+    // -------------------------
+    // Speaker noises (persistent)
+    // -------------------------
+    "@crying-start",
+    "@crying-end",
+  
+    "@yelling-start",
+    "@yelling-end",
+  
+    "@laughing-start",
+    "@laughing-end",
+
+    "@singing-start",
+    "@singing-end",
+
+    "@humming-start",
+    "@humming-end",
+
+    "@whistling-start",
+    "@whistling-end",
+
+    "@whisper-start",
+    "@whisper-end",
+
+
+  
+    // -------------------------
+    // Speaker disfluencies (paralinguistic)
+    // -------------------------
+    "@uhh",
+    "@umm",
+    "@hmm",
+    "@uh-huh",
+    "@tsk",
+    "@stammering",
+    "@stuttering",
+  
+    "@repair-start",
+    "@repair-end",
+    "@repetition-start",
+    "@repetition-end",
+    "@false-start-start",
+    "@false-start-end",
+
+  
+    // -------------------------
+    // Speaker-produced sounds 
+    // -------------------------
+    "@breathing",
+    "@inhaling",
+    "@sniffing",
+    "@nose-blowing",
+    "@cough",
+    "@sneezing",
+    "@throat-clearing",
+    "@yawning",
+    "@swallowing",
+    "@snoring",
+    "@wheezing",
+  
+
+    "@groan",
+    "@ugh",
+    
+
+    //
+    //  -------------------------
+    // Background noises (non-speaker)
+    // -------------------------
+    "@background-laughter",
+    "@background-yelling",
+    "@background-applause",
+    "@background-cheering",
+    "@background-sighing",
+    "@background-crying",
+    "@background-singing",
+    "@background-whistling",
+    "@background-humming",
+    "@animal-sounds",
+    "@bird-sounds",
+    "@vehicle-noise",
+    "@mechanical-noise",
+    "@footsteps",  
+    "@click",
+    "@tapping",
+    "@scratching",
+    "@squeak",
+    "@clinking",
+    "@clanking",
+    "@clanging",
+    "@thumping",
+    "@pounding",
+    "@screeching",
+    "@rattling",
+    "@rustling",
+  
+    "@static",
+    "@hiss",
+    "@beep",
+    "@bell",
+    "@buzz",
+    "@ringing",
+    "@phone-ringing",
+    "@horn",
+    "@siren",
+    "@chiming",
+  
+  
+    // -------------------------
+    // Other
+    // -------------------------
+    "@unintelligible"
   ];
+  
+  
 
   const DEFAULT_ENTITY_MAP = {
     PER: "Person", ORG: "Organization", FAC: "Facility", GPE: "Geo Political Entity",
@@ -159,7 +288,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       // --- Options & Elements ---
       this.opts = Object.assign(
         {
-          tags: DEFAULT_TAGS.slice(),
+          tags: NOISE_TAGS.slice(),
           entities: Object.assign({}, DEFAULT_ENTITY_MAP),
           languages: Object.assign({}, DEFAULT_LANGS),
           enableUndoRedo: true,
