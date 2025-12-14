@@ -187,6 +187,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     // -------------------------
     // Speaker-produced sounds 
     // -------------------------
+    "@humming",
     "@breathing",
     "@inhaling",
     "@sniffing",
@@ -195,9 +196,8 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     "@sneezing",
     "@throat-clearing",
     "@yawning",
-    "@swallowing",
+    "@eating",
     "@snoring",
-    "@wheezing",
   
 
     "@groan",
@@ -208,6 +208,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     //  -------------------------
     // Background noises (non-speaker)
     // -------------------------
+    "@background-traffic", 
+    "@background-chatter",
+    "@background-tv",
     "@background-laughter",
     "@background-yelling",
     "@background-applause",
@@ -217,10 +220,12 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     "@background-singing",
     "@background-whistling",
     "@background-humming",
+    "@background-music",
     "@animal-sounds",
     "@bird-sounds",
     "@vehicle-noise",
     "@mechanical-noise",
+    "@typing",
     "@footsteps",  
     "@click",
     "@tapping",
