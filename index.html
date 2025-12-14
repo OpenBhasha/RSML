@@ -231,15 +231,18 @@
 "@hmm",
 "@uh-huh",
 "@tsk",
-"@stammering",
-"@stuttering",
 
+"@stammer-start",
+"@stammer-end",
+"prolongation-start",
+"prolongation-end",
 "@repair-start",
 "@repair-end",
 "@repetition-start",
 "@repetition-end",
 "@false-start-start",
 "@false-start-end",
+"@pause",
 
 
 // -------------------------
@@ -317,28 +320,12 @@
 ];
 
 const entityMap = {
-        PER: "Person",
-        ORG: "Organization",
-        FAC: "Facility",
-        GPE: "Geo Political Entity",
-        LOC: "Location",
-        PRODUCT: "Product",
-        EVENT: "Event",
-        WORK_OF_ART: "Artwork",
-        DATE: "Date",
-        YEAR: "Year",
-        MONTH: "Month",
-        Day: "Day",
-        TIME: "Time",
-        MONEY: "Money",
-        PERCENT: "Percentage",
-        NUMBER: "Number",
-        EMAIL: "Email ID",
-        PHONE: "Phone Number",
-        URL: "Link/URL",
-        ENTITY: "Generic Entity",
-      };
-
+    PER: "Person", ORG: "Organization", FAC: "Facility", GPE: "Geo Political Entity",
+    LOC: "Location", BRAND: "Brand", PRODUCT: "Product", ACRONYM: "Acronym", TITLE: "Title", EVENT: "Event", WORK_OF_ART: "Artwork",
+    DATE: "Date", YEAR: "Year", MONTH: "Month", Day: "Day", TIME: "Time", MONEY: "Money",
+    PERCENT: "Percentage", NUMBER: "Number", EMAIL: "Email ID", PHONE: "Phone Number",
+    URL: "Link/URL", LAW: "Law/Policy", ENTITY: "Generic Entity",
+  };
       const languageCodes = {
         en: "English",
         hi: "Hindi",
