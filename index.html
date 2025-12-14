@@ -245,6 +245,7 @@
 // -------------------------
 // Speaker-produced sounds 
 // -------------------------
+"@humming",
 "@breathing",
 "@inhaling",
 "@sniffing",
@@ -253,9 +254,8 @@
 "@sneezing",
 "@throat-clearing",
 "@yawning",
-"@swallowing",
+"@eating",
 "@snoring",
-"@wheezing",
 
 
 "@groan",
@@ -266,6 +266,9 @@
 //  -------------------------
 // Background noises (non-speaker)
 // -------------------------
+"@background-traffic", 
+"@background-chatter",
+"@background-tv",
 "@background-laughter",
 "@background-yelling",
 "@background-applause",
@@ -275,10 +278,12 @@
 "@background-singing",
 "@background-whistling",
 "@background-humming",
+"@background-music",
 "@animal-sounds",
 "@bird-sounds",
 "@vehicle-noise",
 "@mechanical-noise",
+"@typing",
 "@footsteps",  
 "@click",
 "@tapping",
@@ -310,7 +315,8 @@
 // -------------------------
 "@unintelligible"
 ];
-      const entityMap = {
+
+const entityMap = {
         PER: "Person",
         ORG: "Organization",
         FAC: "Facility",
