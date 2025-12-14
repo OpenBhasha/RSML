@@ -176,8 +176,8 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   
     "@stammer-start",
     "@stammer-end",
-    "prolongation-start",
-    "prolongation-end",
+    "@prolongation-start",
+    "@prolongation-end",
     "@repair-start",
     "@repair-end",
     "@repetition-start",
