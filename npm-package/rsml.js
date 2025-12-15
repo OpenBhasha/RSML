@@ -24,7 +24,7 @@
     const css = `
 /* === RSML Annotator Core Styles === */
 .rsml-suggestions {
-  position: fixed;
+  position: absolute; /* <--- CHANGED FROM fixed TO absolute */
   z-index: 2147483000;
   background: #fff;
   border: 1px solid #ccc;
@@ -168,6 +168,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     // -------------------------
     // Speaker disfluencies (paralinguistic)
     // -------------------------
+    "@ugh",
     "@uhh",
     "@umm",
     "@hmm",
@@ -204,7 +205,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   
 
     "@groan",
-    "@ugh",
     
 
     //
@@ -229,7 +229,8 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     "@vehicle-noise",
     "@mechanical-noise",
     "@typing",
-    "@footsteps",  
+    "@footsteps",
+
     "@click",
     "@tapping",
     "@scratching",
@@ -519,6 +520,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         const query = matchAt[0];
         const filtered = this.opts.tags.filter((t) => t.startsWith(query));
         this._showSuggestions(filtered.length ? filtered : this.opts.tags);
+        console.log("Pressed @")
         return;
       }
       if (matchHash) {
@@ -541,25 +543,51 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     }
 
     _showSuggestions(list) {
+      // Clear previous suggestions
       this.suggestionsBox.innerHTML = "";
       this.currentSuggestions = list.slice();
       this.selectedIndex = list.length ? 0 : -1;
-
-      if (!list.length) return this._hideSuggestions();
-
+    
+      // Hide if empty
+      if (!list.length || !this.textarea || !document.body.contains(this.textarea)) {
+        return this._hideSuggestions();
+      }
+    
+      // Populate suggestion items
       list.forEach((item, i) => {
         const div = document.createElement("div");
-        div.className = `rsml-suggestion-item${i === 0 ? " active" : ""}`;
+        div.className = "rsml-suggestion-item";
+        if (i === 0) div.classList.add("active");
         div.textContent = item;
+    
+        // Handle click (mousedown preferred to prevent blur)
         div.addEventListener("mousedown", (e) => {
-          e.preventDefault(); // prevent textarea blur
+          e.preventDefault(); // prevent blur
           this._insertTag(item);
         });
+    
         this.suggestionsBox.appendChild(div);
       });
-
-      this._positionBoxAtCaret();
+    
+      // --- FIX START ---
+      // 1. Make it part of the layout so it has dimensions for calculation
       this.suggestionsBox.style.display = "block";
+      this.suggestionsBox.style.visibility = "hidden"; 
+    
+      // 2. Position at caret (Now it can safely measure width/height for boundary checks)
+      try {
+        this._positionBoxAtCaret();
+      } catch (err) {
+        console.warn("Caret positioning failed:", err);
+        // If positioning fails, hide it again to prevent a broken UI
+        this.suggestionsBox.style.display = "none";
+        this.suggestionsBox.style.visibility = "visible";
+        return this._hideSuggestions(); 
+      }
+    
+      // 3. Make it visible to the user
+      this.suggestionsBox.style.visibility = "visible";
+      // --- FIX END ---
     }
 
     _updateSelection() {
