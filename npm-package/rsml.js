@@ -734,6 +734,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       this.output.appendChild(content);
     
       this._applyRenderMode(this.output);
+      requestAnimationFrame(() => activateTooltips(this.output));
     }
 
     /* =========================
@@ -753,47 +754,78 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
        RSML Transforms
     ========================= */
 
-    // [native](romanized)
+    // [verbatim](normalized)
     _applyCodeMix(text) {
-      return text.replace(
-        /\[([^\]]+?)\]\(([^)]*?)\)/g,
-        (_, native, romanized) => {
-          const norm = romanized || native;
+      // !<lang>[verbatim](normalized?)
+      text = text.replace(
+        /!([a-z]{2,5})\[(.+?)\]\((.*?)\)/g,
+        (_, lang, verbatim, normalized) => {
+          const v = verbatim.trim();
+          const n = (normalized || verbatim).trim();
+    
           return `<code-mix
-            data-verbatim="${this._esc(native)}"
-            data-normalized="${this._esc(norm)}"
-            title="code-mix"
-          >${this._esc(norm)}</code-mix>`;
+            data-verbatim="${this._esc(v)}"
+            data-normalized="${this._esc(n)}"
+            data-lang="${this._esc(lang)}"
+            data-bs-toggle="tooltip"
+            data-bs-title="code-mix: ${this._esc(lang)}"
+          >${this._esc(n)}</code-mix>`;
         }
       );
+    
+      // [verbatim](normalized?)
+      text = text.replace(
+        /\[([^\]]+?)\]\(([^)]*?)\)/g,
+        (_, verbatim, normalized) => {
+          const v = verbatim.trim();
+          const n = (normalized || verbatim).trim();
+    
+          return `<code-mix
+            data-verbatim="${this._esc(v)}"
+            data-normalized="${this._esc(n)}"
+            data-lang="en"
+            data-bs-toggle="tooltip"
+            data-bs-title="code-mix: en"
+          >${this._esc(n)}</code-mix>`;
+        }
+      );
+    
+      return text;
     }
 
-    // <wrong>(correct)
     _applyMispronunciation(text) {
       return text.replace(
         /<([^>]+?)>\(([^)]*?)\)/g,
         (_, wrong, correct) => {
-          const norm = correct || wrong;
+          const v = wrong.trim();
+          const n = (correct || wrong).trim();
+    
           return `<mispronunciation
-            data-verbatim="${this._esc(wrong)}"
-            data-normalized="${this._esc(norm)}"
-            title="mispronunciation"
-          >${this._esc(norm)}</mispronunciation>`;
+            data-verbatim="${this._esc(v)}"
+            data-normalized="${this._esc(n)}"
+            data-bs-toggle="tooltip"
+            data-bs-title="Accent/Mispronunciation"
+          >${this._esc(n)}</mispronunciation>`;
         }
       );
     }
 
-    // #TYPE{original}(normalized)
     _applyTypedEntities(text) {
       return text.replace(
         /#(\w+)\{([^}]+?)\}\(([^)]*?)\)/g,
         (_, type, original, normalized) => {
-          const norm = normalized || original;
+          const v = original.trim();
+          const n = (normalized || original).trim();
+          const label =
+            this.opts.entities[type.trim()] || "Unknown Entity";
+    
           return `<entity
-            data-verbatim="${this._esc(original)}"
-            data-normalized="${this._esc(norm)}"
-            title="entity: ${this._esc(type)}"
-          >${this._esc(norm)}</entity>`;
+            data-type="${this._esc(type.trim())}"
+            data-verbatim="${this._esc(v)}"
+            data-normalized="${this._esc(n)}"
+            data-bs-toggle="tooltip"
+            data-bs-title="entity: ${this._esc(label)}"
+          >${this._esc(n)}</entity>`;
         }
       );
     }
@@ -803,24 +835,42 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       return text.replace(
         /\{([^}]+?)\}\(([^)]*?)\)/g,
         (_, original, normalized) => {
-          const norm = normalized || original;
+          const v = original.trim();
+          const n = (normalized || original).trim();
+    
           return `<entity
-            data-verbatim="${this._esc(original)}"
-            data-normalized="${this._esc(norm)}"
-            title="entity"
-          >${this._esc(norm)}</entity>`;
+            data-type="GENERIC"
+            data-verbatim="${this._esc(v)}"
+            data-normalized="${this._esc(n)}"
+            data-bs-toggle="tooltip"
+            data-bs-title="entity: GENERIC"
+          >${this._esc(n)}</entity>`;
         }
       );
     }
 
     // Noise
     _applyNoiseTags(text) {
-      return text.replace(/@([\w-]+)/g, (_, n) => {
-        if (n.endsWith("-start")) return `<persistent-noise>`;
-        if (n.endsWith("-end")) return `</persistent-noise>`;
-        return `<noise>@${this._esc(n)}</noise>`;
+      return text.replace(/@([\w-]+)/g, (_, type) => {
+        if (type.endsWith("-start")) {
+          const base = type.split("-")[0];
+          return `<persistent-noise
+            data-bs-toggle="tooltip"
+            data-bs-title="noise: persistent-${this._esc(base)}"
+          >`;
+        }
+        if (type.endsWith("-end")) {
+          return `</persistent-noise>`;
+        }
+        return `<noise
+          data-verbatim="@${this._esc(type)}"
+          data-normalized="@${this._esc(type)}"
+          data-bs-toggle="tooltip"
+          data-bs-title="noise: ${this._esc(type)}"
+        >@${this._esc(type)}</noise>`;
       });
     }
+
 
 
     // ---------- Internal: Undo/Redo ----------
