@@ -63,6 +63,12 @@ persistent-noise { background-color:#d7d7d7; color:#000; border:1px solid #d7d7d
 entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; position:relative; cursor:help; }
 [data-bs-toggle="tooltip"] { cursor: help; }
 .rsml-bg-gray { background-color: rgba(231,231,232,0.4); }
+.form-check-label {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
 `;
 
     const style = document.createElement("style");
@@ -314,6 +320,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           "[RSMLAnnotator] textarea and output are required (DOM elements or selectors)."
         );
       }
+
+      this.renderMode = "normalized"; // or "verbatim"
+      this._toggleInjected = false;
 
       // --- Suggestion state ---
       this.suggestionsBox = document.createElement("div");
@@ -666,94 +675,153 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       }
     }
 
-    // ---------- Internal: Rendering pipeline ----------
+ /* =========================
+       Toggle UI
+    ========================= */
+    _createRenderToggle() {const wrap = document.createElement("div");
+      wrap.className = "form-check form-switch m-2";
+      
+      const toggleId = `rsml-mode-${Math.random().toString(36).slice(2, 9)}`;
+      
+      wrap.innerHTML = `
+        <input
+          class="form-check-input"
+          type="checkbox"
+          id="${toggleId}"
+          checked
+        >
+        <label class="form-check-label" for="${toggleId}">
+          Normalized
+        </label>
+      `;
+
+      const input = wrap.querySelector("input");
+      const label = wrap.querySelector("label");
+
+      input.addEventListener("change", () => {
+        this.renderMode = input.checked ? "normalized" : "verbatim";
+        label.textContent = input.checked ? "Normalized" : "Verbatim";
+        this._applyRenderMode(this.output);
+      });
+
+      return wrap;
+    }
+
+    /* =========================
+       Render Pipeline
+    ========================= */
     _render() {
-      const input = this.textarea.value || "";
-      let html = input.replace(/\n/g, "<br>");
+      let html = (this.textarea.value || "").replace(/\n/g, "<br>");
+    
       html = this._applyCodeMix(html);
       html = this._applyMispronunciation(html);
       html = this._applyTypedEntities(html);
       html = this._applyGenericEntities(html);
       html = this._applyNoiseTags(html);
-
-      this.output.innerHTML = `<p>${html}</p>`;
-      // Bootstrap tooltips if available
-      requestAnimationFrame(() => activateTooltips(this.output));
+    
+      // Preserve toggle
+      const toggle = this.output.querySelector(".form-check");
+      this.output.innerHTML = "";
+      if (toggle) this.output.appendChild(toggle);
+    
+      if (!toggle && !this._toggleInjected) {
+        this.output.appendChild(this._createRenderToggle());
+        this._toggleInjected = true;
+      }
+    
+      const content = document.createElement("div");
+      content.innerHTML = `<p>${html}</p>`;
+      this.output.appendChild(content);
+    
+      this._applyRenderMode(this.output);
     }
 
-    _applyCodeMix(text) {
-      // !<lang>[native](romanized?)
-      text = text.replace(
-        /!([a-z]{2,5})\[(.+?)\]\((.*?)\)/g,
-        (_, lang, native, romanized) => {
-          const content = (romanized || native).trim();
-          return `<code-mix original="${this._esc(native)}" lang="${this._esc(lang)}"
-            title="code-mix: ${this._esc(native)} [${this._esc(lang)}]"
-            data-bs-toggle="tooltip" data-bs-placement="top">${this._esc(content)}</code-mix>`;
-        }
-      );
-      // [native](romanized?)
-      text = text.replace(
-        /\[([^\]]+?)\]\(([^)]*?)\)/g,
-        (_, native, romanized) => {
-          const content = (romanized || native).trim();
-          return `<code-mix original="${this._esc(native)}" lang="en"
-            title="code-mix: ${this._esc(native)}"
-            data-bs-toggle="tooltip" data-bs-placement="top">${this._esc(content)}</code-mix>`;
-        }
-      );
-      return text;
-    }
-
-    _applyMispronunciation(text) {
-      return text.replace(/<([^>]+?)>\(([^)]*?)\)/g, (_, wrong, correct) => {
-        const content = (correct || wrong).trim();
-        return `<mispronunciation original="${this._esc(wrong)}"
-          title="Accent/Mispronunciation: ${this._esc(wrong)}"
-          data-bs-toggle="tooltip" data-bs-placement="top">${this._esc(content)}</mispronunciation>`;
+    /* =========================
+       Render Mode Switch
+    ========================= */
+    _applyRenderMode(root) {
+      root.querySelectorAll("code-mix, mispronunciation, entity").forEach(el => {
+        const txt =
+          this.renderMode === "verbatim"
+            ? el.dataset.verbatim
+            : el.dataset.normalized;
+        if (txt !== undefined) el.textContent = txt;
       });
     }
 
+    /* =========================
+       RSML Transforms
+    ========================= */
+
+    // [native](romanized)
+    _applyCodeMix(text) {
+      return text.replace(
+        /\[([^\]]+?)\]\(([^)]*?)\)/g,
+        (_, native, romanized) => {
+          const norm = romanized || native;
+          return `<code-mix
+            data-verbatim="${this._esc(native)}"
+            data-normalized="${this._esc(norm)}"
+            title="code-mix"
+          >${this._esc(norm)}</code-mix>`;
+        }
+      );
+    }
+
+    // <wrong>(correct)
+    _applyMispronunciation(text) {
+      return text.replace(
+        /<([^>]+?)>\(([^)]*?)\)/g,
+        (_, wrong, correct) => {
+          const norm = correct || wrong;
+          return `<mispronunciation
+            data-verbatim="${this._esc(wrong)}"
+            data-normalized="${this._esc(norm)}"
+            title="mispronunciation"
+          >${this._esc(norm)}</mispronunciation>`;
+        }
+      );
+    }
+
+    // #TYPE{original}(normalized)
     _applyTypedEntities(text) {
       return text.replace(
         /#(\w+)\{([^}]+?)\}\(([^)]*?)\)/g,
         (_, type, original, normalized) => {
-          const descriptor =
-            this.opts.entities[type.trim()] || "Unknown Entity";
-          const content = (normalized || original).trim();
-          return `<entity type="${this._esc(type.trim())}" original="${this._esc(original)}"
-            title="entity: ${this._esc(descriptor)} — ${this._esc(original)}"
-            data-bs-toggle="tooltip" data-bs-placement="top">${this._esc(content)}</entity>`;
+          const norm = normalized || original;
+          return `<entity
+            data-verbatim="${this._esc(original)}"
+            data-normalized="${this._esc(norm)}"
+            title="entity: ${this._esc(type)}"
+          >${this._esc(norm)}</entity>`;
         }
       );
     }
 
+    // {original}(normalized)
     _applyGenericEntities(text) {
       return text.replace(
         /\{([^}]+?)\}\(([^)]*?)\)/g,
         (_, original, normalized) => {
-          const content = (normalized || original).trim();
-          return `<entity type="GENERIC" original="${this._esc(original)}"
-            title="entity: ${this._esc(original)}"
-            data-bs-toggle="tooltip" data-bs-placement="top">${this._esc(content)}</entity>`;
+          const norm = normalized || original;
+          return `<entity
+            data-verbatim="${this._esc(original)}"
+            data-normalized="${this._esc(norm)}"
+            title="entity"
+          >${this._esc(norm)}</entity>`;
         }
       );
     }
 
+    // Noise
     _applyNoiseTags(text) {
-      return text.replace(/@([\w-]+)/g, (_, type) => {
-        if (type.endsWith("-start")) {
-          const base = type.split("-")[0];
-          return `<persistent-noise title="noise: persistent-${this._esc(base)}"
-            data-bs-toggle="tooltip" data-bs-placement="top">`;
-        } else if (type.endsWith("-end")) {
-          return `</persistent-noise>`;
-        } else {
-          return `<noise original="${this._esc(type)}" title="noise: ${this._esc(type)}"
-            data-bs-toggle="tooltip" data-bs-placement="top">@${this._esc(type)}</noise>`;
-        }
+      return text.replace(/@([\w-]+)/g, (_, n) => {
+        if (n.endsWith("-start")) return `<persistent-noise>`;
+        if (n.endsWith("-end")) return `</persistent-noise>`;
+        return `<noise>@${this._esc(n)}</noise>`;
       });
     }
+
 
     // ---------- Internal: Undo/Redo ----------
     _snapshot() {
