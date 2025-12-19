@@ -96,69 +96,80 @@
 
       <!-- 📘 Guidelines Modal -->
       <div
-        class="modal fade"
-        id="guidelinesModal"
-        tabindex="-1"
-        aria-labelledby="guidelinesModalLabel"
-        aria-hidden="true"
-      >
-        <div class="modal-dialog modal-md">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h6 class="modal-title fw-semibold" id="guidelinesModalLabel">
-                Annotation Shortcuts
-              </h6>
-              <button
-                type="button"
-                class="btn-close"
-                data-bs-dismiss="modal"
-                aria-label="Close"
-              ></button>
-            </div>
-            <div class="modal-body small">
-              <p>
-                <strong>@ &mdash; Noise/Disfluency Tags:</strong> mark ambient/background
-                sounds.
-              </p>
-              <p class="ms-3 bg-gray rounded p-2">
-                <code>@noise</code>, <code>@background-laughter</code>,
-                <code>@cough</code>
-              </p>
-
-              <p>
-                <strong># or { } &mdash; Entities:</strong>
-                <code>#TYPE{verbatim}(normalized)</code>
-              </p>
-              <p class="ms-3 bg-gray rounded p-2">
-                <code>{सूर्य देव}(सूर्य देव)</code> <br />
-                <code>#PER{रमेश}(रमेश)</code><br />
-                <code>#ORG{भारतीय रयिलवे}(भारतीय रेल्वे)</code>
-                <br />
-                <code>#GPE{नयी दिल्ली}(नई ढिल्ली)</code>
-                <br />
-                <code>#YEAR{उन्नीस सौ पचासी}(1985)</code>
-              </p>
-
-              <p>
-                <strong>! or [ ] &mdash; Code-Mix:</strong> [Native
-                Script](Code-Mixed Script)
-              </p>
-              <p class="ms-3 bg-gray rounded p-2">
-                <code>!en[ट्रेन](train)</code>, <code>[स्टडी](study)</code>
-              </p>
-
-              <p>
-                <strong>&lt; &gt; &mdash; Accent/Mispronunciation:</strong>
-                <code>&lt;wrong&gt;(correct)</code>
-              </p>
-              <p class="ms-3 bg-gray rounded p-2">
-                <code>&lt;हमाये&gt;(हमारे)</code> 
-                <code>&lt;समझनाहीं&gt;(समझ नहीं)</code> 
-              </p>
-            </div>
+      class="modal fade"
+      id="guidelinesModal"
+      tabindex="-1"
+      aria-labelledby="guidelinesModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-md">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h6 class="modal-title fw-semibold" id="guidelinesModalLabel">
+              Annotation Shortcuts
+            </h6>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body small">
+            <p>
+              <strong>@ &mdash; Noise / Disfluency:</strong> mark ambient or speaker noises.
+            </p>
+            <p class="ms-3 bg-gray rounded p-2">
+              <code>@noise</code>, <code>@background-laughter</code>,
+              <code>@cough</code>
+            </p>
+          
+            <p>
+              <strong># or { } &mdash; Entities:</strong>
+              <code>#TYPE{verbatim}(normalized)</code>
+            </p>
+            <p class="ms-3 bg-gray rounded p-2">
+              <code>{सूर्य देव}(सूर्य देव)</code><br />
+              <code>#PER{रमेश}(रमेश)</code><br />
+              <code>#ORG{भारतीय रयिलवे}(भारतीय रेल्वे)</code><br />
+              <code>#GPE{नयी दिल्ली}(नई ढिल्ली)</code><br />
+              <code>#YEAR{उन्नीस सौ पचासी}(1985)</code>
+            </p>
+          
+            <p>
+              <strong>! or [ ] &mdash; Code-Mix:</strong>
+              native script → mixed-language form
+            </p>
+            <p class="ms-3 bg-gray rounded p-2">
+              <code>!en[ट्रेन](train)</code>, <code>[स्टडी](study)</code>
+            </p>
+          
+            <p>
+              <strong>$ &mdash; Accent (explicit):</strong>
+              <code>$accent&lt;verbatim&gt;(normalized)</code>
+            </p>
+            <p class="ms-3 bg-gray rounded p-2">
+              <code>$british&lt;wa'er&gt;(water)</code><br />
+              <code>$telugu&lt;iskool&gt;(school)</code>
+            </p>
+          
+            <p>
+              <strong>&lt; &gt; &mdash; Accent / Mispronunciation (generic):</strong>
+              <code>&lt;verbatim&gt;(normalized)</code>
+            </p>
+            <p class="ms-3 bg-gray rounded p-2">
+              <code>&lt;हमाये&gt;(हमारे)</code><br />
+              <code>&lt;समझनाहीं&gt;(समझ नहीं)</code>
+            </p>
+          
+            <small class="text-muted ms-3 d-block">
+              Use <code>$accent</code> when the pronunciation is dialectal or systematic.
+              Use <code>&lt; &gt;</code> when the cause is unclear or speaker-specific.
+            </small>
           </div>
         </div>
       </div>
+    </div>
 
       <script type="module">
         import RSMLAnnotator from "https://cdn.jsdelivr.net/npm/rsml@latest/rsml.esm.js";
