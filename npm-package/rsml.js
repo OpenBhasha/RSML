@@ -23,6 +23,10 @@
 
     const css = `
 /* === RSML Annotator Core Styles === */
+.rsml-content {
+  white-space: pre-wrap;   /* preserves \n */
+  word-break: break-word;
+}
 .rsml-suggestions {
   position: absolute; /* <--- CHANGED FROM fixed TO absolute */
   z-index: 2147483000;
@@ -50,13 +54,14 @@
 
 @keyframes rsmlFadeIn { from { opacity:0; transform: translateY(-3px);} to { opacity:1; transform:none;} }
 
-code-mix, mispronunciation, entity, noise, persistent-noise {
-  display: inline-block !important;
+code-mix, accent, mispronunciation, entity, noise, persistent-noise {
+  display: inline !important;
   padding: 1px 4px;
   border-radius: 4px;
   font-size: 0.95em;
 }
 code-mix { background-color:#c8f7ff; border:1px solid #7fd7ea; }
+accent { background-color:#e2caff; border:1px solid #c18eff; }
 mispronunciation { background-color:#ffd1a8; border:1px solid #ffae70; }
 noise { background-color:#888; color:#fff; border:1px solid #666; }
 persistent-noise { background-color:#d7d7d7; color:#000; border:1px solid #d7d7d7; }
@@ -438,6 +443,16 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         return;
       }
 
+      // Insert language scaffold with '$'
+      if (e.key === "$") {
+        e.preventDefault();
+        const insert = selectedText ? `$<${selectedText}>()` : `$<>()`;
+        this.textarea.setRangeText(insert, start, end, "end");
+        this.textarea.setSelectionRange(start + 1, start + 1);
+        this.currentTrigger = "$";
+        return;
+      }
+
       // Suggestion navigation
       if (this.suggestionsBox.style.display !== "none") {
         if (e.key === "ArrowDown") {
@@ -711,13 +726,18 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
        Render Pipeline
     ========================= */
     _render() {
-      let html = (this.textarea.value || "").replace(/\n/g, "<br>");
+      // Raw user text
+      let text = this.textarea.value || "";
+  
     
-      html = this._applyCodeMix(html);
-      html = this._applyMispronunciation(html);
-      html = this._applyTypedEntities(html);
-      html = this._applyGenericEntities(html);
-      html = this._applyNoiseTags(html);
+      // RSML -> HTML transforms (these can safely use multiline template strings)
+      text = this._applyCodeMix(text);
+      text = this._applyAccent(text);
+      text = this._applyMispronunciation(text);
+      text = this._applyTypedEntities(text);
+      text = this._applyGenericEntities(text);
+      text = this._applyNoiseTags(text);
+    
     
       // Preserve toggle
       const toggle = this.output.querySelector(".form-check");
@@ -728,26 +748,31 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         this.output.appendChild(this._createRenderToggle());
         this._toggleInjected = true;
       }
-    
+
       const content = document.createElement("div");
-      content.innerHTML = `<p>${html}</p>`;
-      this.output.appendChild(content);
+content.className = "rsml-content";
+content.innerHTML = text;
+this.output.appendChild(content);
     
       this._applyRenderMode(this.output);
       requestAnimationFrame(() => activateTooltips(this.output));
     }
 
+    
     /* =========================
        Render Mode Switch
     ========================= */
     _applyRenderMode(root) {
-      root.querySelectorAll("code-mix, mispronunciation, entity").forEach(el => {
-        const txt =
-          this.renderMode === "verbatim"
-            ? el.dataset.verbatim
-            : el.dataset.normalized;
-        if (txt !== undefined) el.textContent = txt;
-      });
+      root
+        .querySelectorAll("code-mix, accent, mispronunciation, entity, noise")
+        .forEach(el => {
+          const txt =
+            this.renderMode === "verbatim"
+              ? el.dataset.verbatim
+              : el.dataset.normalized;
+    
+          if (txt !== undefined) el.textContent = txt;
+        });
     }
 
     /* =========================
@@ -756,7 +781,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
     // [verbatim](normalized)
     _applyCodeMix(text) {
-      // !<lang>[verbatim](normalized?)
+      // !lang[verbatim](normalized?)
       text = text.replace(
         /!([a-z]{2,5})\[(.+?)\]\((.*?)\)/g,
         (_, lang, verbatim, normalized) => {
@@ -793,22 +818,42 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       return text;
     }
 
-    _applyMispronunciation(text) {
-      return text.replace(
-        /<([^>]+?)>\(([^)]*?)\)/g,
-        (_, wrong, correct) => {
-          const v = wrong.trim();
-          const n = (correct || wrong).trim();
-    
-          return `<mispronunciation
-            data-verbatim="${this._esc(v)}"
-            data-normalized="${this._esc(n)}"
-            data-bs-toggle="tooltip"
-            data-bs-title="Accent/Mispronunciation"
-          >${this._esc(n)}</mispronunciation>`;
-        }
-      );
-    }
+      // !<lang>[verbatim](normalized?)
+      _applyAccent(text) {
+        return text.replace(
+          /\$(.*?)\<(.+?)\>\((.*?)\)/gi,
+          (_, accent, wrong, correct) => {
+            const v = wrong.trim();
+            const n = (correct || wrong).trim();
+            const title = accent ? `Accent: ${this._esc(accent)}` : "Accent";
+            return `<accent
+              data-verbatim="${this._esc(v)}"
+              data-normalized="${this._esc(n)}"
+              data-bs-toggle="tooltip"
+              data-bs-title="${this._esc(title)}"
+            >${this._esc(n)}</accent>`;
+          }
+        );
+      }
+
+      _applyMispronunciation(text) {
+        return text.replace(
+          /(?<![$@])<([^<>]+)>\(([^()\n]+)\)/g,
+          (_, wrong, correct) => {
+            const v = wrong.trim();
+            const n = (correct || wrong).trim();
+      
+            return (
+              `<mispronunciation
+                data-verbatim="${this._esc(v)}"
+                data-normalized="${this._esc(n)}"
+                data-bs-toggle="tooltip"
+                data-bs-title="Accent/Mispronunciation"
+              >${this._esc(n)}</mispronunciation>`
+            );
+          }
+        );
+      }
 
     _applyTypedEntities(text) {
       return text.replace(
@@ -851,23 +896,28 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
     // Noise
     _applyNoiseTags(text) {
-      return text.replace(/@([\w-]+)/g, (_, type) => {
+      return text.replace(/@([\w-]+)(?![\w-])/g, (_, type) => {
         if (type.endsWith("-start")) {
-          const base = type.split("-")[0];
-          return `<persistent-noise
-            data-bs-toggle="tooltip"
-            data-bs-title="noise: persistent-${this._esc(base)}"
-          >`;
+          const base = type.slice(0, -6);
+          return (
+            `<persistent-noise
+              data-bs-toggle="tooltip"
+              data-bs-title="noise: persistent-${this._esc(base)}"
+            >`
+          );
         }
+    
         if (type.endsWith("-end")) {
-          return `</persistent-noise>`;
+          return (`</persistent-noise>`);
         }
+    
         return `<noise
-          data-verbatim="@${this._esc(type)}"
-          data-normalized="@${this._esc(type)}"
-          data-bs-toggle="tooltip"
-          data-bs-title="noise: ${this._esc(type)}"
-        >@${this._esc(type)}</noise>`;
+            data-verbatim="@${this._esc(type)}"
+            data-normalized="@${this._esc(type)}"
+            data-bs-toggle="tooltip"
+            data-bs-title="noise: ${this._esc(type)}"
+          >@${this._esc(type)}</noise>`
+        ;
       });
     }
 
