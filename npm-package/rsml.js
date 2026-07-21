@@ -148,156 +148,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     "crying", "yelling", "laughing", "singing", "humming", "whistling", "whispering",
   ];
 
-  // Retained for backwards compatibility with existing consumers.
-  const NOISE_TAGS = [
-
-    // -------------------------
-    // Generic noisy environment (fallback only)
-    // -------------------------
-    "@noise-start",
-    "@noise-end",
-    "@noise",
-  
-    // -------------------------
-    // Backround noisy environments (persistent)
-    // -------------------------
-    "@chatter-start",
-    "@chatter-end",
-  
-    "@tv-start",
-    "@tv-end",
-  
-    "@traffic-start",
-    "@traffic-end",
-  
-    "@music-start",
-    "@music-end",
-
-
-    // -------------------------
-    // Speaker noises (persistent)
-    // -------------------------
-    "@crying-start",
-    "@crying-end",
-  
-    "@yelling-start",
-    "@yelling-end",
-  
-    "@laughing-start",
-    "@laughing-end",
-
-    "@singing-start",
-    "@singing-end",
-
-    "@humming-start",
-    "@humming-end",
-
-    "@whistling-start",
-    "@whistling-end",
-
-    "@whisper-start",
-    "@whisper-end",
-
-
-  
-    // -------------------------
-    // Speaker disfluencies (paralinguistic)
-    // -------------------------
-    "@ugh",
-    "@uhh",
-    "@umm",
-    "@hmm",
-    "@uh-huh",
-    "@tsk",
-  
-    "@stammer-start",
-    "@stammer-end",
-    "@prolongation-start",
-    "@prolongation-end",
-    "@repair-start",
-    "@repair-end",
-    "@repetition-start",
-    "@repetition-end",
-    "@false-start-start",
-    "@false-start-end",
-    "@pause",
-
-  
-    // -------------------------
-    // Speaker-produced sounds 
-    // -------------------------
-    "@humming",
-    "@breathing",
-    "@inhaling",
-    "@sniffing",
-    "@nose-blowing",
-    "@cough",
-    "@sneezing",
-    "@throat-clearing",
-    "@yawning",
-    "@eating",
-    "@snoring",
-  
-
-    "@groan",
-    
-
-    //
-    //  -------------------------
-    // Background noises (non-speaker)
-    // -------------------------
-    "@background-traffic", 
-    "@background-chatter",
-    "@background-tv",
-    "@background-laughter",
-    "@background-yelling",
-    "@background-applause",
-    "@background-cheering",
-    "@background-sighing",
-    "@background-crying",
-    "@background-singing",
-    "@background-whistling",
-    "@background-humming",
-    "@background-music",
-    "@animal-sounds",
-    "@bird-sounds",
-    "@vehicle-noise",
-    "@mechanical-noise",
-    "@typing",
-    "@footsteps",
-
-    "@click",
-    "@tapping",
-    "@scratching",
-    "@squeak",
-    "@clinking",
-    "@clanking",
-    "@clanging",
-    "@thumping",
-    "@pounding",
-    "@screeching",
-    "@rattling",
-    "@rustling",
-  
-    "@static",
-    "@hiss",
-    "@beep",
-    "@bell",
-    "@buzz",
-    "@ringing",
-    "@phone-ringing",
-    "@horn",
-    "@siren",
-    "@chiming",
-  
-  
-    // -------------------------
-    // Other
-    // -------------------------
-    "@unintelligible"
-  ];
-  
-  
 
   const DEFAULT_ENTITY_MAP = {
     PER: "Person",
@@ -356,10 +206,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       );
 
       // Merged list of @-prefixed tags for completion (hesitations + speaker sounds).
-      // If a caller passes legacy `tags`, honor it as the full @-tag list.
-      this.opts.tags = (opts && opts.tags)
-        ? opts.tags.slice()
-        : this.opts.hesitations.concat(this.opts.speakerSounds);
+      this.opts.tags = this.opts.hesitations.concat(this.opts.speakerSounds);
 
       this.textarea = $(this.opts.textarea);
       this.output = $(this.opts.output);
@@ -400,9 +247,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
       // Initial render/demo
       if (this.opts.demoText) {
-        this.textarea.value = `బట్టలు ![en](jeans) వేసుకోవడం @umm అమ్మాయిలు అబ్బాయిలు కూడా !en[jeans](jeans) వేసుకొని [ఏందంటే](ఏంటంటే) లుంగీ పంచెలు $filler[అలాంటివి](అలాంటివి) చేస్తారనమాట #GPE[రాయలసీమ](రాయలసీమ)లో
+        this.textarea.value = `బట్టలు !en[jeans](jeans) వేసుకోవడం @umm అమ్మాయిలు అబ్బాయిలు కూడా ![jeans](jeans) వేసుకొని [ఏందంటే](ఏంటంటే) లుంగీ పంచెలు $filler[అలాంటివి](అలాంటివి) చేస్తారనమాట #GPE[రాయలసీమ](రాయలసీమ)లో #[హైదరాబాద్](హైదరాబాద్)
 
-यहाँ पर मैं अपनी !en[स्टडी](study) के बारे में बात कर रहा हूँ। [समझनाहीं](समझ नहीं) कि @pause यह कैसे होगा। #ORG[इंडियन रेलवे](Indian Railway) बहुत बड़ा !en[नेटवर्क](network) है। &laughing[हाहा](हाहा) %american[schedule](शेड्यूल)`;
+यहाँ पर मैं अपनी !en[स्टडी](study) के बारे में बात कर रहा हूँ। [समझनाहीं](समझ नहीं) कि @pause यह कैसे होगा। #ORG[इंडियन रेलवे](Indian Railway) बहुत बड़ा !en[नेटवर्क](network) है। &laughing[हाहा](हाहा) %american[schedule](शेड्यूल) $[तो](तो) &[hmm](hmm) %[foo](bar)`;
       }
       this._render();
     }
@@ -551,19 +398,15 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       }
 
       // Bracket wrapping shortcuts
-      if (["[", "{", "<", "("].includes(e.key)) {
+      //   `[` -> [selection](  )   (bare mispronunciation scaffold)
+      //   `(` -> (selection)
+      if (["[", "("].includes(e.key)) {
         e.preventDefault();
         let wrapInsert = "", cursorOffset;
         if (e.key === "[") {
           wrapInsert = selectedText ? `[${selectedText}]()` : `[]()`;
           cursorOffset = start + (selectedText ? selectedText.length + 3 : 1);
-        } else if (e.key === "{") {
-          wrapInsert = selectedText ? `{${selectedText}}()` : `{}()`;
-          cursorOffset = start + (selectedText ? selectedText.length + 3 : 1);
-        } else if (e.key === "<") {
-          wrapInsert = selectedText ? `<${selectedText}>()` : `<>()`;
-          cursorOffset = start + (selectedText ? selectedText.length + 3 : 1);
-        } else if (e.key === "(") {
+        } else {
           wrapInsert = selectedText ? `(${selectedText})` : `()`;
           cursorOffset = start + (selectedText ? selectedText.length + 2 : 1);
         }
@@ -850,37 +693,39 @@ this.output.appendChild(content);
        RSML Transforms
     ========================= */
 
-    // !lang[verbatim](normalized?)
+    // !lang?[verbatim](normalized?)  — lang optional
     _applyCodeMix(text) {
       return text.replace(
-        /!([A-Za-z]{2,5})\[([^\]]+?)\]\(([^)]*?)\)/g,
+        /!([A-Za-z]{2,5})?\[([^\]]+?)\]\(([^)]*?)\)/g,
         (_, lang, verbatim, normalized) => {
           const v = verbatim.trim();
           const n = (normalized || verbatim).trim();
+          const langLabel = lang || "unspecified";
           return `<code-mix
             data-verbatim="${this._esc(v)}"
             data-normalized="${this._esc(n)}"
-            data-lang="${this._esc(lang)}"
+            data-lang="${this._esc(lang || "")}"
             data-bs-toggle="tooltip"
-            data-bs-title="code-mix: ${this._esc(lang)}"
+            data-bs-title="code-mix: ${this._esc(langLabel)}"
           >${this._esc(n)}</code-mix>`;
         }
       );
     }
 
-    // %accent-name[verbatim](normalized)
+    // %accent-name?[verbatim](normalized)  — accent name optional
     _applyAccent(text) {
       return text.replace(
-        /%([A-Za-z][\w-]*)\[([^\]]+?)\]\(([^)]*?)\)/g,
+        /%([A-Za-z][\w-]*)?\[([^\]]+?)\]\(([^)]*?)\)/g,
         (_, accent, verbatim, normalized) => {
           const v = verbatim.trim();
           const n = (normalized || verbatim).trim();
+          const accentLabel = accent || "unspecified";
           return `<accent
             data-verbatim="${this._esc(v)}"
             data-normalized="${this._esc(n)}"
-            data-accent="${this._esc(accent)}"
+            data-accent="${this._esc(accent || "")}"
             data-bs-toggle="tooltip"
-            data-bs-title="accent: ${this._esc(accent)}"
+            data-bs-title="accent: ${this._esc(accentLabel)}"
           >${this._esc(n)}</accent>`;
         }
       );
@@ -904,16 +749,19 @@ this.output.appendChild(content);
       );
     }
 
-    // #TYPE[verbatim](normalized)
+    // #TYPE?[verbatim](normalized)  — TYPE optional
     _applyTypedEntities(text) {
       return text.replace(
-        /#([A-Z][A-Z_]*)\[([^\]]+?)\]\(([^)]*?)\)/g,
+        /#([A-Z][A-Z_]*)?\[([^\]]+?)\]\(([^)]*?)\)/g,
         (_, type, original, normalized) => {
           const v = original.trim();
           const n = (normalized || original).trim();
-          const label = this.opts.entities[type.trim()] || "Unknown Entity";
+          const t = (type || "").trim();
+          const label = t
+            ? (this.opts.entities[t] || "Unknown Entity")
+            : "Entity";
           return `<entity
-            data-type="${this._esc(type.trim())}"
+            data-type="${this._esc(t)}"
             data-verbatim="${this._esc(v)}"
             data-normalized="${this._esc(n)}"
             data-bs-toggle="tooltip"
@@ -923,39 +771,42 @@ this.output.appendChild(content);
       );
     }
 
-    // $type[verbatim](normalized?)  — normalized omitted for broken-word
+    // $type?[verbatim](normalized?)  — type optional, normalized omitted for broken-word
     _applyDisfluency(text) {
       return text.replace(
-        /\$([a-z][\w-]*)\[([^\]]+?)\](?:\(([^)]*?)\))?/g,
+        /\$([a-z][\w-]*)?\[([^\]]+?)\](?:\(([^)]*?)\))?/g,
         (_, type, verbatim, normalized) => {
           const v = verbatim.trim();
+          const t = type || "";
           const hasNormalized = normalized !== undefined;
           const n = hasNormalized ? (normalized || verbatim).trim() : v;
-          const display = DISFLUENCIES_WITHOUT_NORMALIZED.has(type) ? v : n;
+          const display = DISFLUENCIES_WITHOUT_NORMALIZED.has(t) ? v : n;
+          const label = t || "unspecified";
           return `<disfluency
-            data-type="${this._esc(type)}"
+            data-type="${this._esc(t)}"
             data-verbatim="${this._esc(v)}"
             data-normalized="${this._esc(display)}"
             data-bs-toggle="tooltip"
-            data-bs-title="disfluency: ${this._esc(type)}"
+            data-bs-title="disfluency: ${this._esc(label)}"
           >${this._esc(display)}</disfluency>`;
         }
       );
     }
 
-    // &type[verbatim](normalized)
+    // &type?[verbatim](normalized)  — type optional
     _applyParalinguistics(text) {
       return text.replace(
-        /&([a-z][\w-]*)\[([^\]]+?)\]\(([^)]*?)\)/g,
+        /&([a-z][\w-]*)?\[([^\]]+?)\]\(([^)]*?)\)/g,
         (_, type, verbatim, normalized) => {
           const v = verbatim.trim();
           const n = (normalized || verbatim).trim();
+          const label = type || "unspecified";
           return `<paralinguistic
-            data-type="${this._esc(type)}"
+            data-type="${this._esc(type || "")}"
             data-verbatim="${this._esc(v)}"
             data-normalized="${this._esc(n)}"
             data-bs-toggle="tooltip"
-            data-bs-title="paralinguistic: ${this._esc(type)}"
+            data-bs-title="paralinguistic: ${this._esc(label)}"
           >${this._esc(n)}</paralinguistic>`;
         }
       );
