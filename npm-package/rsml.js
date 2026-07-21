@@ -54,7 +54,7 @@
 
 @keyframes rsmlFadeIn { from { opacity:0; transform: translateY(-3px);} to { opacity:1; transform:none;} }
 
-code-mix, accent, mispronunciation, entity, noise, persistent-noise {
+code-mix, accent, mispronunciation, entity, noise, disfluency, paralinguistic {
   display: inline !important;
   padding: 1px 4px;
   border-radius: 4px;
@@ -64,7 +64,8 @@ code-mix { background-color:#c8f7ff; border:1px solid #7fd7ea; }
 accent { background-color:#e2caff; border:1px solid #c18eff; }
 mispronunciation { background-color:#ffd1a8; border:1px solid #ffae70; }
 noise { background-color:#888; color:#fff; border:1px solid #666; }
-persistent-noise { background-color:#d7d7d7; color:#000; border:1px solid #d7d7d7; }
+disfluency { background-color:#ffe0b3; border:1px solid #ffb84d; }
+paralinguistic { background-color:#e6ffb3; border:1px solid #b3d977; }
 entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; position:relative; cursor:help; }
 [data-bs-toggle="tooltip"] { cursor: help; }
 .rsml-bg-gray { background-color: rgba(231,231,232,0.4); }
@@ -125,6 +126,29 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   }
 
   // ---------- Defaults ----------
+  const DEFAULT_HESITATIONS = [
+    "@umm", "@uhh", "@hmm", "@ugh", "@huh", "@tsk", "@uh-huh",
+  ];
+
+  const DEFAULT_SPEAKER_SOUNDS = [
+    "@pause", "@unintelligible",
+    "@hum", "@breathe", "@inhale", "@sniff", "@nose-blowing",
+    "@cough", "@sneezing", "@throat-clearing", "@yawn",
+    "@eating-sounds", "@snore", "@groan",
+  ];
+
+  const DEFAULT_DISFLUENCIES = [
+    "filler", "repetition", "broken-word", "repair", "false-start", "prolongation",
+  ];
+
+  // broken-word has no normalized form
+  const DISFLUENCIES_WITHOUT_NORMALIZED = new Set(["broken-word"]);
+
+  const DEFAULT_PARALINGUISTICS = [
+    "crying", "yelling", "laughing", "singing", "humming", "whistling", "whispering",
+  ];
+
+  // Retained for backwards compatibility with existing consumers.
   const NOISE_TAGS = [
 
     // -------------------------
@@ -276,11 +300,22 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   
 
   const DEFAULT_ENTITY_MAP = {
-    PER: "Person", ORG: "Organization", FAC: "Facility", GPE: "Geo Political Entity",
-    LOC: "Location", BRAND: "Brand", PRODUCT: "Product", ACRONYM: "Acronym", TITLE: "Title", EVENT: "Event", WORK_OF_ART: "Artwork",
-    DATE: "Date", YEAR: "Year", MONTH: "Month", Day: "Day", TIME: "Time", MONEY: "Money",
-    PERCENT: "Percentage", NUMBER: "Number", EMAIL: "Email ID", PHONE: "Phone Number",
-    URL: "Link/URL", LAW: "Law/Policy", ENTITY: "Generic Entity",
+    PER: "Person",
+    GPE: "Geo Political Entity",
+    LOC: "Location",
+    ITEM: "Item",
+    WOA: "Work of Art",
+    EVENT: "Event",
+    SPORTS: "Sports",
+    ORG: "Organization",
+    BRAND: "Brand",
+    HON: "Honorific",
+    DATETIME: "Date/Time",
+    MONEY: "Money",
+    QUANT: "Quantity",
+    NUM: "Number",
+    LANG: "Language",
+    LAW: "Law/Policy",
   };
 
   const DEFAULT_LANGS = {
@@ -308,7 +343,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       // --- Options & Elements ---
       this.opts = Object.assign(
         {
-          tags: NOISE_TAGS.slice(),
+          hesitations: DEFAULT_HESITATIONS.slice(),
+          speakerSounds: DEFAULT_SPEAKER_SOUNDS.slice(),
+          disfluencies: DEFAULT_DISFLUENCIES.slice(),
+          paralinguistics: DEFAULT_PARALINGUISTICS.slice(),
           entities: Object.assign({}, DEFAULT_ENTITY_MAP),
           languages: Object.assign({}, DEFAULT_LANGS),
           enableUndoRedo: true,
@@ -316,6 +354,12 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         },
         opts || {}
       );
+
+      // Merged list of @-prefixed tags for completion (hesitations + speaker sounds).
+      // If a caller passes legacy `tags`, honor it as the full @-tag list.
+      this.opts.tags = (opts && opts.tags)
+        ? opts.tags.slice()
+        : this.opts.hesitations.concat(this.opts.speakerSounds);
 
       this.textarea = $(this.opts.textarea);
       this.output = $(this.opts.output);
@@ -356,9 +400,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
       // Initial render/demo
       if (this.opts.demoText) {
-        this.textarea.value = `బట్టలు [జీన్స్](jeans) వేసుకోవడం @umm అమ్మాయిలు అబ్బాయిలు కూడా [జీన్స్](jeans) వేసుకొని <ఏందంటే>(ఏంటంటే) లుంగీ పంచెలు ఎక్కువ వేసుకోకుండా ఉండడం అలాంటివి చేస్తారనమాట #GPE{రాయలసీమ}(రాయలసీమ)లో
+        this.textarea.value = `బట్టలు ![en](jeans) వేసుకోవడం @umm అమ్మాయిలు అబ్బాయిలు కూడా !en[jeans](jeans) వేసుకొని [ఏందంటే](ఏంటంటే) లుంగీ పంచెలు $filler[అలాంటివి](అలాంటివి) చేస్తారనమాట #GPE[రాయలసీమ](రాయలసీమ)లో
 
-यहाँ पर मैं अपनी [स्टडी](study) के @noise-start बारे में बात कर रहा हूँ। <समझनाहीं>(समझ नहीं) कि @noise-end यह कैसे होगा। {भारतीय रयिलवे}(भारतीय रेल्वे) और #ORG{इंडियन रेलवे}(Indian Railway) बहुत बड़ा [नेटवर्क](network) है।@background-laughter`;
+यहाँ पर मैं अपनी !en[स्टडी](study) के बारे में बात कर रहा हूँ। [समझनाहीं](समझ नहीं) कि @pause यह कैसे होगा। #ORG[इंडियन रेलवे](Indian Railway) बहुत बड़ा !en[नेटवर्क](network) है। &laughing[हाहा](हाहा) %american[schedule](शेड्यूल)`;
       }
       this._render();
     }
@@ -413,10 +457,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       const end = this.textarea.selectionEnd;
       const selectedText = this.textarea.value.slice(start, end);
 
-      // Insert entity scaffold with '#'
+      // Insert entity scaffold with '#'  -> #[verbatim](normalized)
       if (e.key === "#") {
         e.preventDefault();
-        const insert = selectedText ? `#{${selectedText}}()` : `#{}()`;
+        const insert = selectedText ? `#[${selectedText}]()` : `#[]()`;
         this.textarea.setRangeText(insert, start, end, "end");
         this.textarea.setSelectionRange(start + 1, start + 1);
         this.currentTrigger = "#";
@@ -428,7 +472,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         return;
       }
 
-      // Insert language scaffold with '!'
+      // Insert code-mix scaffold with '!'  -> !lang[verbatim](normalized)
       if (e.key === "!") {
         e.preventDefault();
         const insert = selectedText ? `![${selectedText}]()` : `![]()`;
@@ -443,13 +487,35 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         return;
       }
 
-      // Insert language scaffold with '$'
+      // Insert disfluency scaffold with '$'  -> $type[verbatim](normalized)
       if (e.key === "$") {
         e.preventDefault();
-        const insert = selectedText ? `$<${selectedText}>()` : `$<>()`;
+        const insert = selectedText ? `$[${selectedText}]()` : `$[]()`;
         this.textarea.setRangeText(insert, start, end, "end");
         this.textarea.setSelectionRange(start + 1, start + 1);
         this.currentTrigger = "$";
+        this._showSuggestions(this.opts.disfluencies.slice());
+        return;
+      }
+
+      // Insert accent scaffold with '%'  -> %accent-name[verbatim](normalized)
+      if (e.key === "%") {
+        e.preventDefault();
+        const insert = selectedText ? `%[${selectedText}]()` : `%[]()`;
+        this.textarea.setRangeText(insert, start, end, "end");
+        this.textarea.setSelectionRange(start + 1, start + 1);
+        this.currentTrigger = "%";
+        return;
+      }
+
+      // Insert paralinguistic scaffold with '&'  -> &type[verbatim](normalized)
+      if (e.key === "&") {
+        e.preventDefault();
+        const insert = selectedText ? `&[${selectedText}]()` : `&[]()`;
+        this.textarea.setRangeText(insert, start, end, "end");
+        this.textarea.setSelectionRange(start + 1, start + 1);
+        this.currentTrigger = "&";
+        this._showSuggestions(this.opts.paralinguistics.slice());
         return;
       }
 
@@ -538,13 +604,14 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       const matchAt = before.match(/@[\w-]*$/);
       const matchHash = before.match(/#[A-Za-z_]*$/);
       const matchBang = before.match(/![A-Za-z_]*$/);
+      const matchDollar = before.match(/\$[\w-]*$/);
+      const matchAmp = before.match(/&[\w-]*$/);
 
       if (matchAt) {
         this.currentTrigger = "@";
         const query = matchAt[0];
         const filtered = this.opts.tags.filter((t) => t.startsWith(query));
         this._showSuggestions(filtered.length ? filtered : this.opts.tags);
-        console.log("Pressed @")
         return;
       }
       if (matchHash) {
@@ -561,6 +628,20 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         const codes = Object.keys(this.opts.languages);
         const filtered = codes.filter((c) => c.startsWith(q));
         this._showSuggestions(filtered.map((c) => `${c} (${this.opts.languages[c]})`));
+        return;
+      }
+      if (matchDollar) {
+        this.currentTrigger = "$";
+        const q = matchDollar[0].substring(1).toLowerCase();
+        const filtered = this.opts.disfluencies.filter((d) => d.startsWith(q));
+        this._showSuggestions(filtered.length ? filtered : this.opts.disfluencies);
+        return;
+      }
+      if (matchAmp) {
+        this.currentTrigger = "&";
+        const q = matchAmp[0].substring(1).toLowerCase();
+        const filtered = this.opts.paralinguistics.filter((p) => p.startsWith(q));
+        this._showSuggestions(filtered.length ? filtered : this.opts.paralinguistics);
         return;
       }
       this._hideSuggestions();
@@ -642,41 +723,28 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       const cursorPos = this.textarea.selectionStart;
       const value = this.textarea.value;
 
-      if (this.currentTrigger === "#") {
-        const iHash = value.lastIndexOf("#", cursorPos);
-        const iBrace = value.indexOf("{", iHash);
-        if (iHash !== -1 && iBrace > iHash) {
-          const before = value.slice(0, iHash + 1);
-          const after = value.slice(iBrace);
-          const newText = `${before}${tagOnly}${after}`;
-          this.textarea.value = newText;
-          const caret = newText.indexOf("()", iBrace) + 1;
-          this.textarea.setSelectionRange(caret, caret);
-          this._hideSuggestions();
-          this.textarea.focus();
-          this._render();
-          if (this.opts.enableUndoRedo) this._recordState();
-          return;
-        }
-      }
+      // Insert the type name between a prefix char and the following '['.
+      const prefixInsert = (prefixChar) => {
+        const iPre = value.lastIndexOf(prefixChar, cursorPos);
+        const iBr = value.indexOf("[", iPre);
+        if (iPre === -1 || iBr <= iPre) return false;
+        const before = value.slice(0, iPre + 1);
+        const after = value.slice(iBr);
+        const newText = `${before}${tagOnly}${after}`;
+        this.textarea.value = newText;
+        const caret = newText.indexOf("()", iBr) + 1;
+        this.textarea.setSelectionRange(caret, caret);
+        this._hideSuggestions();
+        this.textarea.focus();
+        this._render();
+        if (this.opts.enableUndoRedo) this._recordState();
+        return true;
+      };
 
-      if (this.currentTrigger === "!") {
-        const iEx = value.lastIndexOf("!", cursorPos);
-        const iBr = value.indexOf("[", iEx);
-        if (iEx !== -1 && iBr > iEx) {
-          const before = value.slice(0, iEx + 1);
-          const after = value.slice(iBr);
-          const newText = `${before}${tagOnly}${after}`;
-          this.textarea.value = newText;
-          const caret = newText.indexOf("()", iBr) + 1;
-          this.textarea.setSelectionRange(caret, caret);
-          this._hideSuggestions();
-          this.textarea.focus();
-          this._render();
-          if (this.opts.enableUndoRedo) this._recordState();
-          return;
-        }
-      }
+      if (this.currentTrigger === "#" && prefixInsert("#")) return;
+      if (this.currentTrigger === "!" && prefixInsert("!")) return;
+      if (this.currentTrigger === "$" && prefixInsert("$")) return;
+      if (this.currentTrigger === "&" && prefixInsert("&")) return;
 
       if (this.currentTrigger === "@") {
         const start =
@@ -730,13 +798,16 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       let text = this.textarea.value || "";
   
     
-      // RSML -> HTML transforms (these can safely use multiline template strings)
-      text = this._applyCodeMix(text);
-      text = this._applyAccent(text);
-      text = this._applyMispronunciation(text);
-      text = this._applyTypedEntities(text);
-      text = this._applyGenericEntities(text);
-      text = this._applyNoiseTags(text);
+      // RSML -> HTML transforms. Order matters: all prefixed forms consume
+      // their `X[v](n)` payload first so the bare `[v](n)` left over can only
+      // be a mispronunciation.
+      text = this._applyCodeMix(text);          // !lang[v](n)
+      text = this._applyAccent(text);           // %acc[v](n)
+      text = this._applyTypedEntities(text);    // #TYPE[v](n)
+      text = this._applyDisfluency(text);       // $type[v](n?)
+      text = this._applyParalinguistics(text);  // &type[v](n)
+      text = this._applyMispronunciation(text); // [v](n)
+      text = this._applyNoiseTags(text);        // @tag
     
     
       // Preserve toggle
@@ -764,7 +835,7 @@ this.output.appendChild(content);
     ========================= */
     _applyRenderMode(root) {
       root
-        .querySelectorAll("code-mix, accent, mispronunciation, entity, noise")
+        .querySelectorAll("code-mix, accent, mispronunciation, entity, noise, disfluency, paralinguistic")
         .forEach(el => {
           const txt =
             this.renderMode === "verbatim"
@@ -779,15 +850,13 @@ this.output.appendChild(content);
        RSML Transforms
     ========================= */
 
-    // [verbatim](normalized)
+    // !lang[verbatim](normalized?)
     _applyCodeMix(text) {
-      // !lang[verbatim](normalized?)
-      text = text.replace(
-        /!([a-z]{2,5})\[(.+?)\]\((.*?)\)/g,
+      return text.replace(
+        /!([A-Za-z]{2,5})\[([^\]]+?)\]\(([^)]*?)\)/g,
         (_, lang, verbatim, normalized) => {
           const v = verbatim.trim();
           const n = (normalized || verbatim).trim();
-    
           return `<code-mix
             data-verbatim="${this._esc(v)}"
             data-normalized="${this._esc(n)}"
@@ -797,73 +866,52 @@ this.output.appendChild(content);
           >${this._esc(n)}</code-mix>`;
         }
       );
-    
-      // [verbatim](normalized?)
-      text = text.replace(
+    }
+
+    // %accent-name[verbatim](normalized)
+    _applyAccent(text) {
+      return text.replace(
+        /%([A-Za-z][\w-]*)\[([^\]]+?)\]\(([^)]*?)\)/g,
+        (_, accent, verbatim, normalized) => {
+          const v = verbatim.trim();
+          const n = (normalized || verbatim).trim();
+          return `<accent
+            data-verbatim="${this._esc(v)}"
+            data-normalized="${this._esc(n)}"
+            data-accent="${this._esc(accent)}"
+            data-bs-toggle="tooltip"
+            data-bs-title="accent: ${this._esc(accent)}"
+          >${this._esc(n)}</accent>`;
+        }
+      );
+    }
+
+    // Bare [verbatim](normalized) — mispronunciation. Runs AFTER all prefixed
+    // forms have already consumed their `X[v](n)` payloads.
+    _applyMispronunciation(text) {
+      return text.replace(
         /\[([^\]]+?)\]\(([^)]*?)\)/g,
         (_, verbatim, normalized) => {
           const v = verbatim.trim();
           const n = (normalized || verbatim).trim();
-    
-          return `<code-mix
+          return `<mispronunciation
             data-verbatim="${this._esc(v)}"
             data-normalized="${this._esc(n)}"
-            data-lang="en"
             data-bs-toggle="tooltip"
-            data-bs-title="code-mix: en"
-          >${this._esc(n)}</code-mix>`;
+            data-bs-title="mispronunciation"
+          >${this._esc(n)}</mispronunciation>`;
         }
       );
-    
-      return text;
     }
 
-      // !<lang>[verbatim](normalized?)
-      _applyAccent(text) {
-        return text.replace(
-          /\$(.*?)\<(.+?)\>\((.*?)\)/gi,
-          (_, accent, wrong, correct) => {
-            const v = wrong.trim();
-            const n = (correct || wrong).trim();
-            const title = accent ? `Accent: ${this._esc(accent)}` : "Accent";
-            return `<accent
-              data-verbatim="${this._esc(v)}"
-              data-normalized="${this._esc(n)}"
-              data-bs-toggle="tooltip"
-              data-bs-title="${this._esc(title)}"
-            >${this._esc(n)}</accent>`;
-          }
-        );
-      }
-
-      _applyMispronunciation(text) {
-        return text.replace(
-          /(?<![$@])<([^<>]+)>\(([^()\n]+)\)/g,
-          (_, wrong, correct) => {
-            const v = wrong.trim();
-            const n = (correct || wrong).trim();
-      
-            return (
-              `<mispronunciation
-                data-verbatim="${this._esc(v)}"
-                data-normalized="${this._esc(n)}"
-                data-bs-toggle="tooltip"
-                data-bs-title="Accent/Mispronunciation"
-              >${this._esc(n)}</mispronunciation>`
-            );
-          }
-        );
-      }
-
+    // #TYPE[verbatim](normalized)
     _applyTypedEntities(text) {
       return text.replace(
-        /#(\w+)\{([^}]+?)\}\(([^)]*?)\)/g,
+        /#([A-Z][A-Z_]*)\[([^\]]+?)\]\(([^)]*?)\)/g,
         (_, type, original, normalized) => {
           const v = original.trim();
           const n = (normalized || original).trim();
-          const label =
-            this.opts.entities[type.trim()] || "Unknown Entity";
-    
+          const label = this.opts.entities[type.trim()] || "Unknown Entity";
           return `<entity
             data-type="${this._esc(type.trim())}"
             data-verbatim="${this._esc(v)}"
@@ -875,49 +923,53 @@ this.output.appendChild(content);
       );
     }
 
-    // {original}(normalized)
-    _applyGenericEntities(text) {
+    // $type[verbatim](normalized?)  — normalized omitted for broken-word
+    _applyDisfluency(text) {
       return text.replace(
-        /\{([^}]+?)\}\(([^)]*?)\)/g,
-        (_, original, normalized) => {
-          const v = original.trim();
-          const n = (normalized || original).trim();
-    
-          return `<entity
-            data-type="GENERIC"
+        /\$([a-z][\w-]*)\[([^\]]+?)\](?:\(([^)]*?)\))?/g,
+        (_, type, verbatim, normalized) => {
+          const v = verbatim.trim();
+          const hasNormalized = normalized !== undefined;
+          const n = hasNormalized ? (normalized || verbatim).trim() : v;
+          const display = DISFLUENCIES_WITHOUT_NORMALIZED.has(type) ? v : n;
+          return `<disfluency
+            data-type="${this._esc(type)}"
             data-verbatim="${this._esc(v)}"
-            data-normalized="${this._esc(n)}"
+            data-normalized="${this._esc(display)}"
             data-bs-toggle="tooltip"
-            data-bs-title="entity: GENERIC"
-          >${this._esc(n)}</entity>`;
+            data-bs-title="disfluency: ${this._esc(type)}"
+          >${this._esc(display)}</disfluency>`;
         }
       );
     }
 
-    // Noise
+    // &type[verbatim](normalized)
+    _applyParalinguistics(text) {
+      return text.replace(
+        /&([a-z][\w-]*)\[([^\]]+?)\]\(([^)]*?)\)/g,
+        (_, type, verbatim, normalized) => {
+          const v = verbatim.trim();
+          const n = (normalized || verbatim).trim();
+          return `<paralinguistic
+            data-type="${this._esc(type)}"
+            data-verbatim="${this._esc(v)}"
+            data-normalized="${this._esc(n)}"
+            data-bs-toggle="tooltip"
+            data-bs-title="paralinguistic: ${this._esc(type)}"
+          >${this._esc(n)}</paralinguistic>`;
+        }
+      );
+    }
+
+    // @tag  — hesitations, pauses, unintelligible, speaker sounds
     _applyNoiseTags(text) {
       return text.replace(/@([\w-]+)(?![\w-])/g, (_, type) => {
-        if (type.endsWith("-start")) {
-          const base = type.slice(0, -6);
-          return (
-            `<persistent-noise
-              data-bs-toggle="tooltip"
-              data-bs-title="noise: persistent-${this._esc(base)}"
-            >`
-          );
-        }
-    
-        if (type.endsWith("-end")) {
-          return (`</persistent-noise>`);
-        }
-    
         return `<noise
             data-verbatim="@${this._esc(type)}"
             data-normalized="@${this._esc(type)}"
             data-bs-toggle="tooltip"
             data-bs-title="noise: ${this._esc(type)}"
-          >@${this._esc(type)}</noise>`
-        ;
+          >@${this._esc(type)}</noise>`;
       });
     }
 
