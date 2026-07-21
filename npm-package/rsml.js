@@ -960,4 +960,4 @@ this.output.appendChild(content);
   // Named + default export (for ESM interop via bundlers)
   RSMLAnnotator.default = RSMLAnnotator;
   return RSMLAnnotator;
-});
+})
