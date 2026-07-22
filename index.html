@@ -58,11 +58,11 @@
       <div id="collapseIsolated" class="accordion-collapse collapse show" data-bs-parent="#rsmlAccordion">
         <div class="accordion-body">
           <p class="mb-1"><strong>Hesitations</strong></p>
-          <ul class="list-unstyled" id="hesitationList"></ul>
+          <p id="hesitationList"></p>
           <p class="mb-1 mt-2"><strong>Paralinguistic sounds</strong></p>
-          <ul class="list-unstyled" id="isoParalinguisticList"></ul>
+          <p id="isoParalinguisticList"></p>
           <p class="mb-1 mt-2"><strong>Other</strong></p>
-          <ul class="list-unstyled" id="isoOtherList"></ul>
+          <p id="isoOtherList"></p>
         </div>
       </div>
     </div>
@@ -76,11 +76,11 @@
       <div id="collapseSpans" class="accordion-collapse collapse" data-bs-parent="#rsmlAccordion">
         <div class="accordion-body">
           <p class="mb-1"><strong>Disfluencies</strong> — <code>@name-start ... @name-end</code></p>
-          <ul class="list-unstyled" id="disfluencySpanList"></ul>
+          <p id="disfluencySpanList"></p>
           <p class="mb-1 mt-2"><strong>Paralinguistics (span form)</strong></p>
-          <ul class="list-unstyled" id="paralinguisticSpanList"></ul>
+          <p id="paralinguisticSpanList"></p>
           <p class="mb-1 mt-2"><strong>Prosody</strong></p>
-          <ul class="list-unstyled" id="prosodySpanList"></ul>
+          <p id="prosodySpanList"></p>
           <p class="mb-1 mt-2"><strong>Speaker turns</strong> — <code>&amp;sN-start ... &amp;sN-end</code></p>
           <p class="small text-muted mb-0">Press <code>&amp;</code> to open the speaker picker.</p>
         </div>
@@ -95,7 +95,7 @@
       </h2>
       <div id="collapseEntities" class="accordion-collapse collapse" data-bs-parent="#rsmlAccordion">
         <div class="accordion-body">
-          <ul class="list-unstyled" id="entityTagsList"></ul>
+          <div id="entityTagsList"></div>
         </div>
       </div>
     </div>
@@ -146,8 +146,7 @@
           <code>[verbatim](normalized)</code>
         </p>
         <p class="ms-3 bg-gray rounded p-2">
-          <code>[सक्रीन](स्क्रीन)</code><br />
-          <code>[iskool](school)</code>
+          <code>[सक्रीन](स्क्रीन)</code>, <code>[iskool](school)</code>
         </p>
 
         <p>
@@ -155,8 +154,7 @@
           <code>!lang[verbatim](normalized)</code>. Language optional.
         </p>
         <p class="ms-3 bg-gray rounded p-2">
-          <code>!en[ट्रेन](train)</code><br />
-          <code>![लोकेशन](location)</code>
+          <code>!en[ट्रेन](train)</code>, <code>![लोकेशन](location)</code>
         </p>
 
         <p>
@@ -164,9 +162,7 @@
           <code>#TYPE[verbatim](normalized)</code>. Type optional.
         </p>
         <p class="ms-3 bg-gray rounded p-2">
-          <code>#PER[रमेश](रमेश)</code><br />
-          <code>#GPE[नई दिल्ली](नई दिल्ली)</code><br />
-          <code>#DATETIME[उन्नीस सौ पचासी](1985)</code>
+          <code>#PER[रमेश](रमेश)</code>, <code>#GPE[नई दिल्ली](नई दिल्ली)</code>, <code>#DATETIME[उन्नीस सौ पचासी](1985)</code>
         </p>
 
         <p>
@@ -174,9 +170,7 @@
           <code>$accent-name[verbatim](normalized)</code>. Name optional.
         </p>
         <p class="ms-3 bg-gray rounded p-2">
-          <code>$british[wa'er](water)</code><br />
-          <code>$telugu[iskool](school)</code><br />
-          <code>$[नईं](नहीं)</code>
+          <code>$british[wa'er](water)</code>, <code>$telugu[iskool](school)</code>, <code>$[नईं](नहीं)</code>
         </p>
 
         <p>
@@ -199,8 +193,7 @@
           <code>&amp;sN-start … &amp;sN-end</code>
         </p>
         <p class="ms-3 bg-gray rounded p-2">
-          <code>&amp;s1-start नमस्ते &amp;s1-end</code><br />
-          <code>&amp;s2-start कैसे हो? &amp;s2-end</code>
+          <code>&amp;s1-start नमस्ते &amp;s1-end</code>, <code>&amp;s2-start कैसे हो? &amp;s2-end</code>
         </p>
 
         <small class="text-muted d-block mt-2">
@@ -254,24 +247,96 @@
   ];
 
   const entityMap = {
-    PER: "Person",
-    GPE: "Geo Political Entity",
-    FAC: "Facility",
-    LOC: "Location",
-    ITEM: "Item",
-    WOA: "Work of Art",
-    EVENT: "Event",
-    SPORTS: "Sports",
-    ORG: "Organization",
-    BRAND: "Brand",
-    HON: "Honorific",
-    DATETIME: "Date/Time Expressions",
-    MONEY: "Money",
-    QUANT: "Quantity",
-    NUM: "Number",
-    LANG: "Language",
-    LAW: "Law/Policy",
-    ID: "Identifier (Aadhar, PAN, Passport, etc.)",
+    PER: {
+      name: "Person",
+      explanation: "Names of individual people.",
+      example: "#PER[रमेश](रमेश)",
+    },
+    GPE: {
+      name: "Geo Political Entity",
+      explanation: "Countries, states, cities, and other political divisions.",
+      example: "#GPE[नई ढिल्ली](नई दिल्ली)",
+    },
+    FAC: {
+      name: "Facility",
+      explanation: "Buildings, airports, bridges, and other built structures.",
+      example: "#FAC[रेल निलय](रेल निलय)",
+    },
+    LOC: {
+      name: "Location",
+      explanation: "Non-political physical locations: rivers, roads, regions.",
+      example: "#LOC[ఎంజీ రోడ్డు](MG Road)",
+    },
+    ITEM: {
+      name: "Item",
+      explanation: "Physical objects or products mentioned by name.",
+      example: "#ITEM[टिकट](ticket)",
+    },
+    WOA: {
+      name: "Work of Art",
+      explanation: "Titles of books, films, songs, paintings, and other creative works.",
+      example: "#WOA[त्त्री इडियट्स](3 Idiots)",
+    },
+    EVENT: {
+      name: "Event",
+      explanation: "Named events: festivals, wars, conferences, ceremonies.",
+      example: "#EVENT[दीवाली](दीवाली)",
+    },
+    SPORTS: {
+      name: "Sports",
+      explanation: "Sports, teams, tournaments, and sporting events.",
+      example: "#SPORTS[क्रिकेट](Cricket)",
+    },
+    ORG: {
+      name: "Organization",
+      explanation: "Companies, institutions, agencies, and other organized bodies.",
+      example: "#ORG[ट्र्रिपल आइटी](IIIT)",
+    },
+    BRAND: {
+      name: "Brand",
+      explanation: "Commercial brand or product-line names.",
+      example: "#BRAND[स्विग्गी](Swiggy)",
+    },
+    HON: {
+      name: "Honorific",
+      explanation: "Titles or respectful forms of address attached to a name.",
+      example: "#HON[काका](काका)",
+    },
+    DATETIME: {
+      name: "Date/Time Expressions",
+      explanation: "Dates, times, durations, and other temporal expressions.",
+      example: "#DATETIME[उन्नीस सौ पचासी](1985)",
+    },
+    MONEY: {
+      name: "Money",
+      explanation: "Monetary amounts, with or without currency words.",
+      example: "#MONEY[दो सौ रुपये](₹200)",
+    },
+    QUANT: {
+      name: "Quantity",
+      explanation: "Measurements and counted quantities that aren't plain numbers.",
+      example: "#QUANT[दो टिकट](2 ticket)",
+    },
+    NUM: {
+      name: "Number",
+      explanation: "Standalone numerals spoken as words.",
+      example: "#NUM[सेवंटी पैव](seventy five)",
+    },
+    LANG: {
+      name: "Language",
+      explanation: "Names of languages mentioned in speech.",
+      example: "#LANG[ఇంగ్లీషు](English)",
+    },
+    LAW: {
+      name: "Law/Policy",
+      explanation: "Named laws, acts, policies, or regulations.",
+      example: "#LAW[आरटीई एक्ट](RTE Act)",
+    },
+    ID: {
+      name: "Identifier",
+      explanation: "Aadhar, PAN, passport, and other identifier numbers.",
+      example: "#ID[एबीसीडी1234ई](ABCD1234E)",
+    },
   };
 
   const languageCodes = {
@@ -284,15 +349,34 @@
 </script>
 
 <script>
-  // ---------- Populate accordion ----------
+  // ---------- Populate accordion (comma-separated) ----------
 
+  // Renders a comma-separated list of <code>prefix+item+suffix</code> chips
+  // into the container, e.g. "@umm, @uhh, @hmm"
   const chipList = (containerId, items, prefix = "", suffix = "") => {
     const el = document.getElementById(containerId);
-    items.forEach((item) => {
+    items.forEach((item, i) => {
       const code = document.createElement("code");
       code.className = "tag-chip";
       code.textContent = `${prefix}${item}${suffix}`;
       el.appendChild(code);
+      if (i < items.length - 1) {
+        el.appendChild(document.createTextNode(", "));
+      }
+    });
+  };
+
+  // Span pairs — show both -start and -end, comma-separated between pairs
+  const spanPairs = (containerId, bases) => {
+    const el = document.getElementById(containerId);
+    bases.forEach((base, i) => {
+      const code = document.createElement("code");
+      code.className = "tag-chip";
+      code.textContent = `@${base}-start … @${base}-end`;
+      el.appendChild(code);
+      if (i < bases.length - 1) {
+        el.appendChild(document.createTextNode(", "));
+      }
     });
   };
 
@@ -301,27 +385,30 @@
   chipList("isoParalinguisticList", isolatedParalinguistics);
   chipList("isoOtherList", isolatedOther);
 
-  // Span pairs — show both -start and -end
-  const spanPairs = (containerId, bases) => {
-    const el = document.getElementById(containerId);
-    bases.forEach((base) => {
-      const code = document.createElement("code");
-      code.className = "tag-chip";
-      code.textContent = `@${base}-start … @${base}-end`;
-      el.appendChild(code);
-    });
-  };
   spanPairs("disfluencySpanList", disfluencySpans);
   spanPairs("paralinguisticSpanList", paralinguisticSpans);
   spanPairs("prosodySpanList", prosodySpans);
 
-  // Entities
+  // Entities — table with tag, name, explanation, example
   const entityTagsList = document.getElementById("entityTagsList");
-  Object.entries(entityMap).forEach(([key, value]) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<code>#${key}[…](…)</code> — ${value}`;
-    entityTagsList.appendChild(li);
+  const entityTable = document.createElement("table");
+  entityTable.className = "table table-sm table-bordered";
+  const entityThead = document.createElement("thead");
+  entityThead.innerHTML = `<tr><th>Tag</th><th>Name</th><th>Explanation</th><th>Example</th></tr>`;
+  entityTable.appendChild(entityThead);
+  const entityTbody = document.createElement("tbody");
+  Object.entries(entityMap).forEach(([key, info]) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><code>#${key}[…](…)</code></td>
+      <td>${info.name}</td>
+      <td>${info.explanation}</td>
+      <td><code>${info.example}</code></td>
+    `;
+    entityTbody.appendChild(row);
   });
+  entityTable.appendChild(entityTbody);
+  entityTagsList.appendChild(entityTable);
 
   // Languages
   const languageTagsList = document.getElementById("languageTagsList");
