@@ -388,6 +388,15 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         );
       }
 
+      // Make the render pane user-resizable to match the editor's resize handle.
+      // Only set when the host hasn't already specified `resize`.
+      const outCs = getComputedStyle(this.output);
+      if (outCs.resize === "none") {
+        this.output.style.resize = "vertical";
+        if (outCs.overflow === "visible") this.output.style.overflow = "auto";
+        if (!this.output.style.minHeight) this.output.style.minHeight = "80px";
+      }
+
       this.renderMode = "normalized"; // or "verbatim"
       this._toggleInjected = false;
 
@@ -1407,6 +1416,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           fontSize: cs.fontSize,
           color: cs.color || "#212529",
           height: cs.height || "250px",
+          resize: "vertical",
+          overflow: "hidden",
+          minHeight: "80px",
         },
         "&.cm-focused": {
           outline: "none",
