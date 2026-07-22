@@ -419,8 +419,13 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
 &s1-start आप कैसे हैं? &s1-end &s2-start मैं ठीक हूँ। @laughter &s2-end`;
       }
-      this._installHighlightOverlay();
       this._render();
+      // Prefer CodeMirror 6 as the editing surface (single-layer render, no
+      // overlay drift). Fall back to the plain textarea if CM6 can't load
+      // (offline, strict CSP, etc.).
+      this._bootCM().catch((err) => {
+        console.warn("[RSMLAnnotator] CodeMirror unavailable, using plain textarea:", err);
+      });
     }
 
     // ---------- Public API ----------
@@ -1310,6 +1315,370 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+    }
+
+    /* =========================
+       CodeMirror 6 integration
+       -------------------------
+       Loaded lazily via dynamic ESM imports. When it mounts, the plain
+       textarea is hidden and CM becomes the editing surface — a single
+       DOM layer, no overlay, so text and highlights cannot drift.
+    ========================= */
+    async _bootCM() {
+      if (this._cmMounted) return;
+      // Skip if the caller opted out.
+      if (this.opts.disableCodeMirror) return;
+
+      const V = "6";
+      const [stateMod, viewMod, commandsMod, autocompleteMod, languageMod, searchMod] =
+        await Promise.all([
+          import(`https://esm.sh/@codemirror/state@${V}`),
+          import(`https://esm.sh/@codemirror/view@${V}`),
+          import(`https://esm.sh/@codemirror/commands@${V}`),
+          import(`https://esm.sh/@codemirror/autocomplete@${V}`),
+          import(`https://esm.sh/@codemirror/language@${V}`),
+          import(`https://esm.sh/@codemirror/search@${V}`),
+        ]);
+
+      this._cm = {
+        state: stateMod, view: viewMod, commands: commandsMod,
+        autocomplete: autocompleteMod, language: languageMod, search: searchMod,
+      };
+      this._mountCM();
+      this._cmMounted = true;
+    }
+
+    _mountCM() {
+      const { state, view, commands, autocomplete, language } = this._cm;
+      const self = this;
+      const ta = this.textarea;
+
+      // ----- Highlight decorations (StateField) -----
+      const buildDeco = (doc) => {
+        const text = doc.toString();
+        const marks = [];
+        self._walkTokens(text, (from, to, cls) => {
+          marks.push(view.Decoration.mark({ class: cls }).range(from, to));
+        });
+        marks.sort((a, b) => a.from - b.from || a.startSide - b.startSide);
+        return view.Decoration.set(marks);
+      };
+      const decoField = state.StateField.define({
+        create: (st) => buildDeco(st.doc),
+        update: (deco, tr) =>
+          tr.docChanged ? buildDeco(tr.state.doc) : deco.map(tr.changes),
+        provide: (f) => view.EditorView.decorations.from(f),
+      });
+
+      // ----- Match highlight (ViewPlugin, tracks caret) -----
+      const matchPlugin = view.ViewPlugin.fromClass(
+        class {
+          constructor(v) { this.decorations = self._computeCMMatch(v); }
+          update(u) {
+            if (u.docChanged || u.selectionSet) {
+              this.decorations = self._computeCMMatch(u.view);
+            }
+          }
+        },
+        { decorations: (v) => v.decorations }
+      );
+
+      // ----- Autocomplete source -----
+      const rsmlComplete = autocomplete.autocompletion({
+        override: [(ctx) => self._cmComplete(ctx)],
+        activateOnTyping: true,
+        icons: false,
+      });
+
+      // ----- Theme: match the textarea's Bootstrap form-control look -----
+      const cs = getComputedStyle(ta);
+      const themeExt = view.EditorView.theme({
+        "&": {
+          background: cs.backgroundColor || "#fff",
+          border: cs.borderTopStyle && cs.borderTopWidth !== "0px"
+            ? `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor}`
+            : "1px solid #ced4da",
+          borderRadius: cs.borderTopLeftRadius || "0.375rem",
+          fontFamily: cs.fontFamily,
+          fontSize: cs.fontSize,
+          color: cs.color || "#212529",
+          height: cs.height || "250px",
+        },
+        "&.cm-focused": {
+          outline: "none",
+          borderColor: "#86b7fe",
+          boxShadow: "0 0 0 0.25rem rgba(13,110,253,.25)",
+        },
+        ".cm-scroller": { fontFamily: "inherit", lineHeight: cs.lineHeight },
+        ".cm-content": { padding: `${cs.paddingTop} ${cs.paddingRight}` },
+        ".cm-line": { padding: 0 },
+      });
+
+      const startState = state.EditorState.create({
+        doc: ta.value || "",
+        extensions: [
+          view.drawSelection(),
+          view.highlightActiveLine(),
+          view.EditorView.lineWrapping,
+          commands.history(),
+          rsmlComplete,
+          view.keymap.of([
+            ...commands.defaultKeymap,
+            ...commands.historyKeymap,
+            ...autocomplete.completionKeymap,
+            { key: "Mod-z", run: commands.undo, preventDefault: true },
+            { key: "Mod-Shift-z", run: commands.redo, preventDefault: true },
+            { key: "Mod-y", run: commands.redo, preventDefault: true },
+          ]),
+          decoField,
+          matchPlugin,
+          themeExt,
+          view.EditorView.updateListener.of((update) => {
+            if (!update.docChanged) return;
+            ta.value = update.state.doc.toString();
+            self._render();
+          }),
+        ],
+      });
+
+      // Hide the original textarea; mount CM immediately after it.
+      ta.style.display = "none";
+      this.view = new view.EditorView({
+        state: startState,
+        parent: ta.parentNode,
+      });
+      // Insert CM's DOM right after the (now hidden) textarea so layout
+      // slots into the same place.
+      ta.parentNode.insertBefore(this.view.dom, ta.nextSibling);
+    }
+
+    // Shared token walker: emits (from, to, class) tuples for every syntax
+    // fragment. Used by CM decorations; same rules as the parser.
+    _walkTokens(text, add) {
+      let i = 0;
+      const n = text.length;
+      while (i < n) {
+        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        if (pm) {
+          const prefix = pm[1];
+          const openBracket = i + pm[0].length - 1;
+          const closeBracket = this._matchBracket(text, openBracket, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              const cat = prefix === "!" ? "code-mix"
+                        : prefix === "#" ? "entity" : "accent";
+              const cls = `tok-${cat}`;
+              add(i, openBracket + 1, cls);
+              add(closeBracket, closeBracket + 2, cls);
+              add(closeParen, closeParen + 1, cls);
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+        if (text[i] === "[") {
+          const closeBracket = this._matchBracket(text, i, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              add(i, i + 1, "tok-mispronunciation");
+              add(closeBracket, closeBracket + 2, "tok-mispronunciation");
+              add(closeParen, closeParen + 1, "tok-mispronunciation");
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+        if (text[i] === "@") {
+          const at = /^@([\w-]+)/.exec(text.slice(i));
+          if (at) {
+            const name = at[1];
+            const isStart = name.endsWith("-start");
+            const isEnd = !isStart && name.endsWith("-end");
+            let cls;
+            if (isStart || isEnd) {
+              const base = name.slice(0, isStart ? -6 : -4);
+              const cat = this._spanCategory.get(base) || "unknown";
+              cls = `tok-span-${cat}`;
+            } else {
+              const cat = this._atCategory.get(name) || "unknown";
+              cls = `tok-at-${cat}`;
+            }
+            add(i, i + at[0].length, cls);
+            i += at[0].length;
+            continue;
+          }
+        }
+        if (text[i] === "&") {
+          const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
+          if (sp) {
+            add(i, i + sp[0].length, "tok-span-speaker");
+            i += sp[0].length;
+            continue;
+          }
+        }
+        i++;
+      }
+    }
+
+    // Match highlight — find the group containing the caret and mark all
+    // its fragments with `.tok-match`.
+    _computeCMMatch(view) {
+      const { state, view: viewMod } = this._cm;
+      const doc = view.state.doc;
+      const text = doc.toString();
+      const pos = view.state.selection.main.head;
+
+      // Rebuild the group table from the current doc.
+      const groups = [];
+      const startCount = new Map();
+      const endCount = new Map();
+      let bracketCounter = 0;
+      let i = 0;
+      const n = text.length;
+      const pushGroup = (ranges, key) => groups.push({ ranges, key });
+      while (i < n) {
+        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        if (pm) {
+          const openBracket = i + pm[0].length - 1;
+          const closeBracket = this._matchBracket(text, openBracket, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              pushGroup(
+                [[i, openBracket + 1], [closeBracket, closeBracket + 2], [closeParen, closeParen + 1]],
+                `b${bracketCounter++}`
+              );
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+        if (text[i] === "[") {
+          const closeBracket = this._matchBracket(text, i, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              pushGroup(
+                [[i, i + 1], [closeBracket, closeBracket + 2], [closeParen, closeParen + 1]],
+                `b${bracketCounter++}`
+              );
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+        if (text[i] === "@") {
+          const at = /^@([\w-]+)/.exec(text.slice(i));
+          if (at) {
+            const name = at[1];
+            const isStart = name.endsWith("-start");
+            const isEnd = !isStart && name.endsWith("-end");
+            if (isStart || isEnd) {
+              const base = name.slice(0, isStart ? -6 : -4);
+              const map = isStart ? startCount : endCount;
+              const idx = map.get(base) || 0;
+              map.set(base, idx + 1);
+              pushGroup([[i, i + at[0].length]], `p:${base}:${idx}`);
+            }
+            i += at[0].length;
+            continue;
+          }
+        }
+        if (text[i] === "&") {
+          const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
+          if (sp) {
+            const base = sp[1];
+            const map = sp[2] === "start" ? startCount : endCount;
+            const idx = map.get(base) || 0;
+            map.set(base, idx + 1);
+            pushGroup([[i, i + sp[0].length]], `p:${base}:${idx}`);
+            i += sp[0].length;
+            continue;
+          }
+        }
+        i++;
+      }
+
+      // Collapse groups with the same key (start/end pairs) into one.
+      const byKey = new Map();
+      for (const g of groups) {
+        if (!byKey.has(g.key)) byKey.set(g.key, []);
+        byKey.get(g.key).push(...g.ranges);
+      }
+
+      // Find the group whose any range contains the caret.
+      let hit = null;
+      for (const [key, ranges] of byKey) {
+        if (ranges.some(([a, b]) => pos >= a && pos <= b)) {
+          hit = ranges;
+          break;
+        }
+      }
+      const marks = [];
+      if (hit) {
+        for (const [a, b] of hit) {
+          marks.push(viewMod.Decoration.mark({ class: "tok-match" }).range(a, b));
+        }
+      }
+      marks.sort((a, b) => a.from - b.from || a.startSide - b.startSide);
+      return viewMod.Decoration.set(marks);
+    }
+
+    // CM completion source for @ # ! $ & prefixes.
+    _cmComplete(ctx) {
+      const trigger = ctx.matchBefore(/[@#!$&][\w-]*/);
+      if (!trigger) return null;
+      const prefix = trigger.text[0];
+      let options = [];
+      const wrapApply = (insert, cursorRel) =>
+        (view, completion, from, to) => {
+          view.dispatch({
+            changes: { from, to, insert },
+            selection: { anchor: from + cursorRel },
+          });
+        };
+      switch (prefix) {
+        case "@":
+          options = this.opts.tags.map((t) => ({
+            label: t,
+            apply: wrapApply(t + " ", t.length + 1),
+          }));
+          break;
+        case "#":
+          options = Object.keys(this.opts.entities).map((k) => ({
+            label: `#${k}`,
+            detail: this.opts.entities[k],
+            apply: wrapApply(`#${k}[]()`, `#${k}[`.length),
+          }));
+          break;
+        case "!":
+          options = Object.keys(this.opts.languages).map((c) => ({
+            label: `!${c}`,
+            detail: this.opts.languages[c],
+            apply: wrapApply(`!${c}[]()`, `!${c}[`.length),
+          }));
+          break;
+        case "$":
+          options = [{
+            label: "$ (accent)",
+            detail: "accent-name is free-form",
+            apply: wrapApply(`$[]()`, `$[`.length),
+          }];
+          break;
+        case "&":
+          options = this._buildSpeakerSuggestions("").map((s) => {
+            const clean = s.replace(/ .*/, "");
+            return {
+              label: `&${clean}`,
+              detail: s.includes("(") ? "new speaker" : null,
+              apply: wrapApply(`&${clean} `, clean.length + 2),
+            };
+          });
+          break;
+      }
+      return { from: trigger.from, to: trigger.to, options };
     }
   }
 
