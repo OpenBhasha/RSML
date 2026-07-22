@@ -69,7 +69,43 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .rsml-disfluency { background-color:#ffe0b3; border:1px solid #ffb84d; }
 .rsml-paralinguistic { background-color:#e6ffb3; border:1px solid #b3d977; }
 .rsml-prosody { background-color:#ffd6f0; border:1px solid #f095c8; }
-.rsml-speaker { background-color:#dcd6ff; border:1px solid #a898ff; padding:1px 4px; border-radius:4px; }
+/* Pitch-contour spans: no background — just a small arrow above the text. */
+.rsml-span.rsml-span-raising-pitch,
+.rsml-span.rsml-span-falling-pitch {
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  position: relative;
+  display: inline-block;
+}
+.rsml-span.rsml-span-raising-pitch::before,
+.rsml-span.rsml-span-falling-pitch::before {
+  position: absolute;
+  top: -0.65em;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.8em;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+.rsml-span.rsml-span-raising-pitch::before { content: "↗"; color:#c22; }
+.rsml-span.rsml-span-falling-pitch::before { content: "↘"; color:#06c; }
+/* Speaker: no highlight box, just a small "Speaker N" label at the turn start. */
+.rsml-speaker { background: transparent; border: none; padding: 0; border-radius: 0; }
+.rsml-speaker-label {
+  display: inline-block;
+  font-size: 0.7em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #5a4dd0;
+  padding: 1px 6px;
+  border: 1px solid #cfc7ff;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: baseline;
+  text-transform: uppercase;
+}
 .rsml-span-orphan { outline:1px dashed #d33; }
 /* Verbatim / normalized layer switch — nested tags inherit the mode via CSS. */
 .rsml-content .rsml-verbatim,
@@ -777,9 +813,13 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         if (text[i] === "&") {
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) {
-            out += sp[2] === "start"
-              ? `<span class="rsml-span rsml-speaker" data-speaker="${this._esc(sp[1])}" data-bs-toggle="tooltip" data-bs-title="speaker: ${this._esc(sp[1])}">`
-              : `</span>`;
+            if (sp[2] === "start") {
+              const num = sp[1].slice(1);
+              out += `<span class="rsml-speaker" data-speaker="${this._esc(sp[1])}">`
+                   + `<span class="rsml-speaker-label" data-bs-toggle="tooltip" data-bs-title="speaker turn: ${this._esc(sp[1])}">Speaker ${this._esc(num)}</span> `;
+            } else {
+              out += `</span>`;
+            }
             i += sp[0].length;
             continue;
           }
@@ -819,8 +859,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
     _buildTaggedHTML(prefix, type, verbatim, normalized) {
       const tag = this._prefixToTagName(prefix);
-      const vInner = this._transformRSML(verbatim);
-      const nInner = this._transformRSML(normalized);
+      // Bracket slots are rendered as literal text — no nested tag parsing.
+      const vInner = this._esc(verbatim);
+      const nInner = this._esc(normalized);
 
       let title = "";
       let dataAttrs = "";
