@@ -77,9 +77,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 /* Pitch-contour spans: no background — just a small arrow above the text. */
 .rsml-span.rsml-span-raising-pitch,
 .rsml-span.rsml-span-falling-pitch {
-  background: transparent;
-  border: none;
-  padding: 0 2px;
+  background: rgb(252, 122, 0, 0.1);
+  color:#000;
+  border: 1px solid rgb(252, 122, 0);
+  padding: 1px 2px;
   position: relative;
   display: inline-block;
 }
