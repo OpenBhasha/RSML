@@ -115,6 +115,28 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   overflow-wrap: break-word;
   will-change: transform;
 }
+/* Text-shaping settings must match on both layers or complex scripts
+   (Devanagari / Telugu conjuncts) drift character by character. */
+.rsml-hl-container > textarea.rsml-hl-textarea,
+.rsml-hl-content {
+  font-kerning: normal;
+  font-variant-ligatures: normal;
+  font-variant-numeric: normal;
+  font-variant-caps: normal;
+  font-variant-east-asian: normal;
+  font-feature-settings: normal;
+  font-synthesis: none;
+  font-optical-sizing: auto;
+  text-rendering: auto;
+  text-orientation: mixed;
+  unicode-bidi: isolate;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
+  tab-size: 4;
+  hanging-punctuation: none;
+  text-size-adjust: 100%;
+}
 /* Token colors — only the syntax (prefix, type, brackets, @-tokens,
    speaker markers) gets a color. Lexical content (verbatim, normalized,
    and any text outside tags) stays the default text color. */
@@ -882,9 +904,17 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       const cs = getComputedStyle(this.textarea);
       const hl = this._hlHighlights;
       const props = [
-        "fontFamily","fontSize","fontWeight","fontStyle","fontVariant",
+        // Font metrics
+        "fontFamily","fontSize","fontWeight","fontStyle",
+        "fontVariant","fontStretch","fontOpticalSizing",
+        "fontKerning","fontFeatureSettings","fontVariationSettings",
+        "fontVariantLigatures","fontVariantNumeric","fontVariantCaps",
+        "fontVariantEastAsian","fontSynthesis",
+        // Text metrics
         "lineHeight","letterSpacing","wordSpacing","tabSize",
-        "textIndent","textTransform","textAlign","direction",
+        "textIndent","textTransform","textAlign","textRendering",
+        "direction","unicodeBidi","writingMode",
+        // Layout
         "boxSizing",
         "paddingTop","paddingRight","paddingBottom","paddingLeft",
         "borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth",
@@ -892,7 +922,12 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         "borderTopLeftRadius","borderTopRightRadius",
         "borderBottomLeftRadius","borderBottomRightRadius",
       ];
-      for (const p of props) hl.style[p] = cs[p];
+      for (const p of props) {
+        const v = cs[p];
+        if (v !== undefined && v !== "") hl.style[p] = v;
+      }
+      // Border must not paint (backdrop is behind the textarea's border already).
+      hl.style.borderColor = "transparent";
     }
 
     _syncHighlightScroll() {
