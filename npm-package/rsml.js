@@ -85,6 +85,17 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   -webkit-text-fill-color: transparent;
   caret-color: #212529;
 }
+/* Selection is drawn on the textarea (which is on top); a translucent
+   background lets the highlighted source below stay visible. */
+.rsml-hl-container > textarea.rsml-hl-textarea::selection {
+  background: rgba(35, 132, 232, 0.28);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.rsml-hl-container > textarea.rsml-hl-textarea::-moz-selection {
+  background: rgba(35, 132, 232, 0.28);
+  color: transparent;
+}
 .rsml-hl-container > .rsml-hl-highlights {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
