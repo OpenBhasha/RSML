@@ -622,26 +622,29 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       }
     }
 
-    // Build the &-trigger suggestion list: -start/-end for each speaker that
-    // already appears in the buffer, plus one fresh speaker to add another.
+    // Build the &-trigger suggestion list. Every speaker that already appears
+    // in the buffer stays available for reuse — using a tag once doesn't
+    // remove it from the list. s1 and s2 are always offered as defaults, and
+    // the last entry adds a fresh speaker beyond the current maximum.
     _buildSpeakerSuggestions(query) {
       const text = this.textarea.value || "";
-      const used = new Set();
+      const used = new Set([1, 2]);
       for (const m of text.matchAll(/&s(\d+)-(?:start|end)/g)) {
         used.add(parseInt(m[1], 10));
       }
-      const speakers = used.size
-        ? [...used].sort((a, b) => a - b)
-        : [1, 2];
-      const nextNew = (speakers.length ? Math.max(...speakers) : 0) + 1;
+      const speakers = [...used].sort((a, b) => a - b);
+      const nextNew = speakers[speakers.length - 1] + 1;
       const list = [];
       for (const n of speakers) {
         list.push(`s${n}-start`);
         list.push(`s${n}-end`);
       }
-      list.push(`s${nextNew}-start (new speaker)`);
-      list.push(`s${nextNew}-end (new speaker)`);
-      return list.filter((item) => item.startsWith(query));
+      list.push(`s${nextNew}-start  (add new speaker)`);
+      list.push(`s${nextNew}-end  (add new speaker)`);
+      if (!query) return list;
+      const q = query.toLowerCase();
+      const filtered = list.filter((item) => item.toLowerCase().startsWith(q));
+      return filtered.length ? filtered : list;
     }
 
  /* =========================
