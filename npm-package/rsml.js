@@ -1395,6 +1395,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
       // ----- Theme: match the textarea's Bootstrap form-control look -----
       const cs = getComputedStyle(ta);
+      const editorFont = this.opts.editorFontFamily || cs.fontFamily;
       const themeExt = view.EditorView.theme({
         "&": {
           background: cs.backgroundColor || "#fff",
@@ -1402,7 +1403,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             ? `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor}`
             : "1px solid #ced4da",
           borderRadius: cs.borderTopLeftRadius || "0.375rem",
-          fontFamily: cs.fontFamily,
+          fontFamily: editorFont,
           fontSize: cs.fontSize,
           color: cs.color || "#212529",
           height: cs.height || "250px",
