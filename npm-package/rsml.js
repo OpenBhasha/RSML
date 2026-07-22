@@ -54,8 +54,8 @@
 
 @keyframes rsmlFadeIn { from { opacity:0; transform: translateY(-3px);} to { opacity:1; transform:none;} }
 
-code-mix, accent, mispronunciation, entity, noise,
-.rsml-span {
+code-mix, accent, mispronunciation, entity,
+.rsml-span, .rsml-at {
   display: inline !important;
   padding: 1px 4px;
   border-radius: 4px;
@@ -64,11 +64,16 @@ code-mix, accent, mispronunciation, entity, noise,
 code-mix { background-color:#c8f7ff; border:1px solid #7fd7ea; }
 accent { background-color:#e2caff; border:1px solid #c18eff; }
 mispronunciation { background-color:#ffd1a8; border:1px solid #ffae70; }
-noise { background-color:#888; color:#fff; border:1px solid #666; }
 entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; position:relative; cursor:help; }
+/* Span-pair categories. */
 .rsml-disfluency { background-color:#ffe0b3; border:1px solid #ffb84d; }
 .rsml-paralinguistic { background-color:#e6ffb3; border:1px solid #b3d977; }
 .rsml-prosody { background-color:#ffd6f0; border:1px solid #f095c8; }
+/* Isolated @-token categories. */
+.rsml-at-hesitation      { background-color:#fff0b3; border:1px solid #e5c96b; color:#5a4a10; }
+.rsml-at-paralinguistic  { background-color:#e6ffb3; border:1px solid #b3d977; color:#3a5a10; }
+.rsml-at-other           { background-color:#e0e6f0; border:1px solid #9aacc9; color:#324056; font-style:italic; }
+.rsml-at-unknown         { background-color:#888; color:#fff; border:1px solid #666; }
 /* Pitch-contour spans: no background — just a small arrow above the text. */
 .rsml-span.rsml-span-raising-pitch,
 .rsml-span.rsml-span-falling-pitch {
@@ -265,6 +270,13 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       for (const b of this.opts.disfluencySpans)     this._spanCategory.set(b, "disfluency");
       for (const b of this.opts.paralinguisticSpans) this._spanCategory.set(b, "paralinguistic");
       for (const b of this.opts.prosodySpans)        this._spanCategory.set(b, "prosody");
+
+      // Cache category lookup for isolated @-tokens (with and without the '@' prefix).
+      this._atCategory = new Map();
+      const stripAt = (t) => (t[0] === "@" ? t.slice(1) : t);
+      for (const t of this.opts.hesitations)              this._atCategory.set(stripAt(t), "hesitation");
+      for (const t of this.opts.isolatedParalinguistics)  this._atCategory.set(stripAt(t), "paralinguistic");
+      for (const t of this.opts.isolatedOther)            this._atCategory.set(stripAt(t), "other");
 
       // Full @-tag completion list: isolated tokens plus both ends of every span pair.
       const spanTokens = [];
@@ -915,8 +927,11 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     }
 
     _buildNoiseTag(type) {
+      const category = this._atCategory.get(type) || "unknown";
       const t = this._esc(type);
-      return `<noise data-verbatim="@${t}" data-normalized="@${t}" data-bs-toggle="tooltip" data-bs-title="noise: ${t}">@${t}</noise>`;
+      return `<span class="rsml-at rsml-at-${category}"`
+           + ` data-token="@${t}" data-category="${category}"`
+           + ` data-bs-toggle="tooltip" data-bs-title="${category}: ${t}">@${t}</span>`;
     }
 
 
