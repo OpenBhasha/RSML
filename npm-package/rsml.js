@@ -74,6 +74,54 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .rsml-at-paralinguistic  { background-color:#e6ffb3; border:1px solid #b3d977; color:#3a5a10; }
 .rsml-at-other           { background-color:#e0e6f0; border:1px solid #9aacc9; color:#324056; font-style:italic; }
 .rsml-at-unknown         { background-color:#888; color:#fff; border:1px solid #666; }
+
+/* ===== Source-textarea syntax highlight overlay ===== */
+.rsml-hl-container { position: relative; display: block; }
+.rsml-hl-container > textarea.rsml-hl-textarea {
+  position: relative;
+  z-index: 2;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: #212529;
+}
+.rsml-hl-container > .rsml-hl-highlights {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  color: #212529;
+  border-color: transparent !important;
+}
+.rsml-hl-content {
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  will-change: transform;
+}
+/* Token colors — bracket punctuation stays muted, category chars get the
+   same hue family as the rendered output so the source is readable. */
+.tok-punct { color:#8a8a8a; }
+.tok-prefix { font-weight: 700; }
+.tok-prefix-code-mix, .tok-type-code-mix { color:#0e8fbf; }
+.tok-prefix-entity,   .tok-type-entity   { color:#b8730a; }
+.tok-prefix-accent,   .tok-type-accent   { color:#7a3fbf; }
+.tok-verbatim   { background: rgba(255, 209, 168, 0.35); border-radius: 2px; }
+.tok-normalized { background: rgba(200, 247, 255, 0.55); border-radius: 2px; }
+.tok-at-hesitation     { color:#7a5a10; background: rgba(255, 240, 179, 0.7); border-radius: 2px; }
+.tok-at-paralinguistic { color:#3a5a10; background: rgba(230, 255, 179, 0.7); border-radius: 2px; }
+.tok-at-other          { color:#324056; background: rgba(224, 230, 240, 0.75); border-radius: 2px; font-style: italic; }
+.tok-at-unknown        { color:#333;    background: rgba(200, 200, 200, 0.6); border-radius: 2px; }
+.tok-span-disfluency    { color:#a35410; background: rgba(255, 224, 179, 0.6); border-radius: 2px; }
+.tok-span-paralinguistic{ color:#3a5a10; background: rgba(230, 255, 179, 0.6); border-radius: 2px; }
+.tok-span-prosody       { color:#a63d7e; background: rgba(255, 214, 240, 0.6); border-radius: 2px; }
+.tok-span-speaker       { color:#5a4dd0; background: rgba(220, 214, 255, 0.6); border-radius: 2px; }
+.tok-span-unknown       { color:#333;    background: rgba(200, 200, 200, 0.5); border-radius: 2px; }
 /* Pitch-contour spans: no background — just a small arrow above the text. */
 .rsml-span.rsml-span-raising-pitch,
 .rsml-span.rsml-span-falling-pitch {
@@ -332,6 +380,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
 &s1-start आप कैसे हैं? &s1-end &s2-start मैं ठीक हूँ। @laughter &s2-end`;
       }
+      this._installHighlightOverlay();
       this._render();
     }
 
@@ -343,6 +392,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       window.removeEventListener("resize", this._onScrollOrResize);
       if (this.suggestionsBox && this.suggestionsBox.parentNode) {
         this.suggestionsBox.parentNode.removeChild(this.suggestionsBox);
+      }
+      if (this._hlResizeObserver) {
+        this._hlResizeObserver.disconnect();
+        this._hlResizeObserver = null;
       }
     }
     setValue(str) {
@@ -749,7 +802,168 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       content.innerHTML = html;
       this.output.appendChild(content);
 
+      this._paintHighlight();
       requestAnimationFrame(() => activateTooltips(this.output));
+    }
+
+    /* =========================
+       Source Highlight Overlay
+    ========================= */
+    _installHighlightOverlay() {
+      if (this._hlInstalled) return;
+      this._hlInstalled = true;
+
+      const ta = this.textarea;
+      const container = document.createElement("div");
+      container.className = "rsml-hl-container";
+      ta.parentNode.insertBefore(container, ta);
+      container.appendChild(ta);
+
+      const highlights = document.createElement("div");
+      highlights.className = "rsml-hl-highlights";
+      highlights.setAttribute("aria-hidden", "true");
+      const content = document.createElement("div");
+      content.className = "rsml-hl-content";
+      highlights.appendChild(content);
+      container.insertBefore(highlights, ta);
+
+      this._hlContainer = container;
+      this._hlHighlights = highlights;
+      this._hlContent = content;
+      ta.classList.add("rsml-hl-textarea");
+
+      ta.addEventListener("scroll", () => this._syncHighlightScroll());
+      if (typeof ResizeObserver !== "undefined") {
+        this._hlResizeObserver = new ResizeObserver(() => this._syncHighlightStyles());
+        this._hlResizeObserver.observe(ta);
+      }
+
+      this._syncHighlightStyles();
+    }
+
+    _syncHighlightStyles() {
+      if (!this._hlHighlights) return;
+      const cs = getComputedStyle(this.textarea);
+      const hl = this._hlHighlights;
+      const props = [
+        "fontFamily","fontSize","fontWeight","fontStyle","fontVariant",
+        "lineHeight","letterSpacing","wordSpacing","tabSize",
+        "textIndent","textTransform","textAlign","direction",
+        "boxSizing",
+        "paddingTop","paddingRight","paddingBottom","paddingLeft",
+        "borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth",
+        "borderTopStyle","borderRightStyle","borderBottomStyle","borderLeftStyle",
+        "borderTopLeftRadius","borderTopRightRadius",
+        "borderBottomLeftRadius","borderBottomRightRadius",
+      ];
+      for (const p of props) hl.style[p] = cs[p];
+    }
+
+    _syncHighlightScroll() {
+      if (!this._hlContent) return;
+      const ta = this.textarea;
+      this._hlContent.style.transform =
+        `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
+    }
+
+    _paintHighlight() {
+      if (!this._hlContent) return;
+      this._hlContent.innerHTML = this._highlightSource(this.textarea.value || "");
+      this._syncHighlightScroll();
+    }
+
+    // Character-preserving tokenizer: outputs colored <span>s that overlay
+    // the raw textarea contents 1:1, so the caret and selection stay aligned.
+    _highlightSource(text) {
+      let out = "";
+      let i = 0;
+      const n = text.length;
+      const esc = (s) => this._esc(s);
+
+      while (i < n) {
+        // Prefixed bracket form:  ! # $  + optional type + [v](n)
+        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        if (pm) {
+          const prefix = pm[1];
+          const type = pm[2] || "";
+          const openBracket = i + pm[0].length - 1;
+          const closeBracket = this._matchBracket(text, openBracket, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              const cat = prefix === "!" ? "code-mix"
+                        : prefix === "#" ? "entity"
+                        : "accent";
+              out += `<span class="tok-prefix tok-prefix-${cat}">${esc(prefix)}</span>`;
+              if (type) out += `<span class="tok-type tok-type-${cat}">${esc(type)}</span>`;
+              out += `<span class="tok-punct">[</span>`;
+              out += `<span class="tok-verbatim">${esc(text.slice(openBracket + 1, closeBracket))}</span>`;
+              out += `<span class="tok-punct">](</span>`;
+              out += `<span class="tok-normalized">${esc(text.slice(closeBracket + 2, closeParen))}</span>`;
+              out += `<span class="tok-punct">)</span>`;
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+
+        // Bare mispronunciation:  [v](n)
+        if (text[i] === "[") {
+          const closeBracket = this._matchBracket(text, i, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              out += `<span class="tok-punct">[</span>`;
+              out += `<span class="tok-verbatim">${esc(text.slice(i + 1, closeBracket))}</span>`;
+              out += `<span class="tok-punct">](</span>`;
+              out += `<span class="tok-normalized">${esc(text.slice(closeBracket + 2, closeParen))}</span>`;
+              out += `<span class="tok-punct">)</span>`;
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+
+        // @tag / @name-start / @name-end
+        if (text[i] === "@") {
+          const at = /^@([\w-]+)/.exec(text.slice(i));
+          if (at) {
+            const name = at[1];
+            let cls;
+            if (name.endsWith("-start") || name.endsWith("-end")) {
+              const base = name.slice(0, name.endsWith("-start") ? -6 : -4);
+              const cat = this._spanCategory.get(base) || "unknown";
+              cls = `tok-span-${cat}`;
+            } else {
+              const cat = this._atCategory.get(name) || "unknown";
+              cls = `tok-at-${cat}`;
+            }
+            out += `<span class="${cls}">${esc(at[0])}</span>`;
+            i += at[0].length;
+            continue;
+          }
+        }
+
+        // Speaker span: &sN-start / &sN-end
+        if (text[i] === "&") {
+          const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
+          if (sp) {
+            out += `<span class="tok-span-speaker">${esc(sp[0])}</span>`;
+            i += sp[0].length;
+            continue;
+          }
+        }
+
+        // Literal character.
+        const c = text[i];
+        out += (c === "&") ? "&amp;" : (c === "<") ? "&lt;" : (c === ">") ? "&gt;" : c;
+        i++;
+      }
+
+      // Trailing newline: textareas render an empty final line after '\n',
+      // pre-wrap doesn't unless we add a sentinel.
+      if (text.endsWith("\n")) out += " ";
+      return out;
     }
 
     /* =========================
