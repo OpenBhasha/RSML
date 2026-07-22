@@ -104,9 +104,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   overflow-wrap: break-word;
   will-change: transform;
 }
-/* Token colors — text only. Every part of a single tag (prefix, type,
-   brackets, verbatim, normalized) shares one color so each tag reads as
-   one unit. */
+/* Token colors — only the syntax (prefix, type, brackets, @-tokens,
+   speaker markers) gets a color. Lexical content (verbatim, normalized,
+   and any text outside tags) stays the default text color. */
 .tok-code-mix         { color:#0e8fbf; }
 .tok-entity           { color:#b8730a; }
 .tok-accent           { color:#7a3fbf; }
@@ -120,6 +120,13 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .tok-span-prosody       { color:#a63d7e; }
 .tok-span-speaker       { color:#5a4dd0; }
 .tok-span-unknown       { color:#666; }
+/* IDE-style match highlight for the start/end sibling of the tag under caret. */
+.tok-match {
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
 /* Pitch-contour spans: no background — just a small arrow above the text. */
 .rsml-span.rsml-span-raising-pitch,
 .rsml-span.rsml-span-falling-pitch {
@@ -831,6 +838,11 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       ta.classList.add("rsml-hl-textarea");
 
       ta.addEventListener("scroll", () => this._syncHighlightScroll());
+      const onCaret = () => this._updateMatchHighlight();
+      ta.addEventListener("click", onCaret);
+      ta.addEventListener("keyup", onCaret);
+      ta.addEventListener("focus", onCaret);
+      ta.addEventListener("blur", () => this._clearMatchHighlight());
       if (typeof ResizeObserver !== "undefined") {
         this._hlResizeObserver = new ResizeObserver(() => this._syncHighlightStyles());
         this._hlResizeObserver.observe(ta);
@@ -868,15 +880,29 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       if (!this._hlContent) return;
       this._hlContent.innerHTML = this._highlightSource(this.textarea.value || "");
       this._syncHighlightScroll();
+      this._updateMatchHighlight();
     }
 
-    // Character-preserving tokenizer: outputs colored <span>s that overlay
-    // the raw textarea contents 1:1, so the caret and selection stay aligned.
+    // Character-preserving tokenizer. Only the SYNTAX gets a color; lexical
+    // content (verbatim/normalized slots and plain text) stays default.
+    // Every -start/-end token also carries data-* attributes so the caret
+    // handler can highlight matching pairs.
     _highlightSource(text) {
       let out = "";
       let i = 0;
       const n = text.length;
       const esc = (s) => this._esc(s);
+      // Reset per-render pair tracking. Pair by (name, occurrence index).
+      this._tagRanges = [];
+      const startCount = new Map();
+      const endCount = new Map();
+      const recordPair = (name, role, start, end) => {
+        const map = role === "start" ? startCount : endCount;
+        const idx = map.get(name) || 0;
+        map.set(name, idx + 1);
+        this._tagRanges.push({ start, end, name, role, idx });
+        return idx;
+      };
 
       while (i < n) {
         // Prefixed bracket form:  ! # $  + optional type + [v](n)
@@ -891,7 +917,14 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
               const cat = prefix === "!" ? "code-mix"
                         : prefix === "#" ? "entity"
                         : "accent";
-              out += `<span class="tok-${cat}">${esc(text.slice(i, closeParen + 1))}</span>`;
+              const head = text.slice(i, openBracket + 1);          // "!en["
+              const verbatim = text.slice(openBracket + 1, closeBracket);
+              const normalized = text.slice(closeBracket + 2, closeParen);
+              out += `<span class="tok-${cat}">${esc(head)}</span>`;
+              out += esc(verbatim);
+              out += `<span class="tok-${cat}">${esc("](")}</span>`;
+              out += esc(normalized);
+              out += `<span class="tok-${cat}">${esc(")")}</span>`;
               i = closeParen + 1;
               continue;
             }
@@ -904,7 +937,13 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
             const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
             if (closeParen !== -1) {
-              out += `<span class="tok-mispronunciation">${esc(text.slice(i, closeParen + 1))}</span>`;
+              const verbatim = text.slice(i + 1, closeBracket);
+              const normalized = text.slice(closeBracket + 2, closeParen);
+              out += `<span class="tok-mispronunciation">${esc("[")}</span>`;
+              out += esc(verbatim);
+              out += `<span class="tok-mispronunciation">${esc("](")}</span>`;
+              out += esc(normalized);
+              out += `<span class="tok-mispronunciation">${esc(")")}</span>`;
               i = closeParen + 1;
               continue;
             }
@@ -916,16 +955,21 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           const at = /^@([\w-]+)/.exec(text.slice(i));
           if (at) {
             const name = at[1];
-            let cls;
-            if (name.endsWith("-start") || name.endsWith("-end")) {
-              const base = name.slice(0, name.endsWith("-start") ? -6 : -4);
+            const isStart = name.endsWith("-start");
+            const isEnd = !isStart && name.endsWith("-end");
+            let cls, dataAttrs = "";
+            if (isStart || isEnd) {
+              const base = name.slice(0, isStart ? -6 : -4);
               const cat = this._spanCategory.get(base) || "unknown";
               cls = `tok-span-${cat}`;
+              const role = isStart ? "start" : "end";
+              const idx = recordPair(base, role, i, i + at[0].length);
+              dataAttrs = ` data-tag="${esc(base)}" data-role="${role}" data-idx="${idx}"`;
             } else {
               const cat = this._atCategory.get(name) || "unknown";
               cls = `tok-at-${cat}`;
             }
-            out += `<span class="${cls}">${esc(at[0])}</span>`;
+            out += `<span class="${cls}"${dataAttrs}>${esc(at[0])}</span>`;
             i += at[0].length;
             continue;
           }
@@ -935,7 +979,12 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         if (text[i] === "&") {
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) {
-            out += `<span class="tok-span-speaker">${esc(sp[0])}</span>`;
+            const base = sp[1];
+            const role = sp[2];
+            const idx = recordPair(base, role, i, i + sp[0].length);
+            out += `<span class="tok-span-speaker"`
+                 + ` data-tag="${esc(base)}" data-role="${role}" data-idx="${idx}">`
+                 + `${esc(sp[0])}</span>`;
             i += sp[0].length;
             continue;
           }
@@ -951,6 +1000,29 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       // pre-wrap doesn't unless we add a sentinel.
       if (text.endsWith("\n")) out += " ";
       return out;
+    }
+
+    _updateMatchHighlight() {
+      if (!this._hlContent) return;
+      this._clearMatchHighlight();
+      if (!this._tagRanges || !this._tagRanges.length) return;
+      const pos = this.textarea.selectionStart;
+      const hit = this._tagRanges.find((r) => pos >= r.start && pos <= r.end);
+      if (!hit) return;
+      const partnerRole = hit.role === "start" ? "end" : "start";
+      const sel = (role, idx) =>
+        `[data-tag="${CSS.escape(hit.name)}"][data-role="${role}"][data-idx="${idx}"]`;
+      const els = this._hlContent.querySelectorAll(
+        `${sel(hit.role, hit.idx)}, ${sel(partnerRole, hit.idx)}`
+      );
+      els.forEach((el) => el.classList.add("tok-match"));
+    }
+
+    _clearMatchHighlight() {
+      if (!this._hlContent) return;
+      this._hlContent
+        .querySelectorAll(".tok-match")
+        .forEach((el) => el.classList.remove("tok-match"));
     }
 
     /* =========================
