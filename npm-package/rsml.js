@@ -104,14 +104,13 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   overflow-wrap: break-word;
   will-change: transform;
 }
-/* Token colors — text only, no backgrounds. */
-.tok-punct { color:#9aa0a6; }
-.tok-prefix { font-weight: 700; }
-.tok-prefix-code-mix, .tok-type-code-mix { color:#0e8fbf; }
-.tok-prefix-entity,   .tok-type-entity   { color:#b8730a; }
-.tok-prefix-accent,   .tok-type-accent   { color:#7a3fbf; }
-.tok-verbatim   { color:#b8560a; }
-.tok-normalized { color:#1a7a7a; }
+/* Token colors — text only. Every part of a single tag (prefix, type,
+   brackets, verbatim, normalized) shares one color so each tag reads as
+   one unit. */
+.tok-code-mix         { color:#0e8fbf; }
+.tok-entity           { color:#b8730a; }
+.tok-accent           { color:#7a3fbf; }
+.tok-mispronunciation { color:#c14a1a; }
 .tok-at-hesitation     { color:#8a6a10; }
 .tok-at-paralinguistic { color:#3a6a10; }
 .tok-at-other          { color:#324056; font-style: italic; }
@@ -884,7 +883,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
         if (pm) {
           const prefix = pm[1];
-          const type = pm[2] || "";
           const openBracket = i + pm[0].length - 1;
           const closeBracket = this._matchBracket(text, openBracket, "[", "]");
           if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
@@ -893,13 +891,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
               const cat = prefix === "!" ? "code-mix"
                         : prefix === "#" ? "entity"
                         : "accent";
-              out += `<span class="tok-prefix tok-prefix-${cat}">${esc(prefix)}</span>`;
-              if (type) out += `<span class="tok-type tok-type-${cat}">${esc(type)}</span>`;
-              out += `<span class="tok-punct">[</span>`;
-              out += `<span class="tok-verbatim">${esc(text.slice(openBracket + 1, closeBracket))}</span>`;
-              out += `<span class="tok-punct">](</span>`;
-              out += `<span class="tok-normalized">${esc(text.slice(closeBracket + 2, closeParen))}</span>`;
-              out += `<span class="tok-punct">)</span>`;
+              out += `<span class="tok-${cat}">${esc(text.slice(i, closeParen + 1))}</span>`;
               i = closeParen + 1;
               continue;
             }
@@ -912,11 +904,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
             const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
             if (closeParen !== -1) {
-              out += `<span class="tok-punct">[</span>`;
-              out += `<span class="tok-verbatim">${esc(text.slice(i + 1, closeBracket))}</span>`;
-              out += `<span class="tok-punct">](</span>`;
-              out += `<span class="tok-normalized">${esc(text.slice(closeBracket + 2, closeParen))}</span>`;
-              out += `<span class="tok-punct">)</span>`;
+              out += `<span class="tok-mispronunciation">${esc(text.slice(i, closeParen + 1))}</span>`;
               i = closeParen + 1;
               continue;
             }
