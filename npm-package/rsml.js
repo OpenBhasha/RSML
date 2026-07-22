@@ -71,6 +71,11 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .rsml-prosody { background-color:#ffd6f0; border:1px solid #f095c8; }
 .rsml-speaker { background-color:#dcd6ff; border:1px solid #a898ff; padding:1px 4px; border-radius:4px; }
 .rsml-span-orphan { outline:1px dashed #d33; }
+/* Verbatim / normalized layer switch — nested tags inherit the mode via CSS. */
+.rsml-content .rsml-verbatim,
+.rsml-content .rsml-normalized { display: inline; }
+.rsml-content.rsml-mode-normalized .rsml-verbatim { display: none; }
+.rsml-content.rsml-mode-verbatim .rsml-normalized { display: none; }
 [data-bs-toggle="tooltip"] { cursor: help; }
 .rsml-bg-gray { background-color: rgba(231,231,232,0.4); }
 .form-check-label {
@@ -371,6 +376,16 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         return;
       }
 
+      // Speaker span with '&'  -> shows sN-start / sN-end suggestions.
+      if (e.key === "&") {
+        e.preventDefault();
+        this.textarea.setRangeText("&", start, end, "end");
+        this.textarea.setSelectionRange(start + 1, start + 1);
+        this.currentTrigger = "&";
+        this._showSuggestions(this._buildSpeakerSuggestions(""));
+        return;
+      }
+
       // Suggestion navigation
       if (this.suggestionsBox.style.display !== "none") {
         if (e.key === "ArrowDown") {
@@ -452,7 +467,13 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       const matchAt = before.match(/@[\w-]*$/);
       const matchHash = before.match(/#[A-Za-z_]*$/);
       const matchBang = before.match(/![A-Za-z_]*$/);
+      const matchAmp = before.match(/&[\w-]*$/);
 
+      if (matchAmp) {
+        this.currentTrigger = "&";
+        this._showSuggestions(this._buildSpeakerSuggestions(matchAmp[0].substring(1)));
+        return;
+      }
       if (matchAt) {
         this.currentTrigger = "@";
         const query = matchAt[0];
@@ -585,7 +606,42 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         this.textarea.setSelectionRange(newPos, newPos);
         this._hideSuggestions();
         this.textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        return;
       }
+
+      if (this.currentTrigger === "&") {
+        const start =
+          cursorPos -
+          (value.slice(0, cursorPos).match(/&[\w-]*$/)?.[0].length || 1);
+        const insert = `&${tagOnly} `;
+        this.textarea.setRangeText(insert, start, cursorPos, "end");
+        const newPos = start + insert.length;
+        this.textarea.setSelectionRange(newPos, newPos);
+        this._hideSuggestions();
+        this.textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
+      }
+    }
+
+    // Build the &-trigger suggestion list: -start/-end for each speaker that
+    // already appears in the buffer, plus one fresh speaker to add another.
+    _buildSpeakerSuggestions(query) {
+      const text = this.textarea.value || "";
+      const used = new Set();
+      for (const m of text.matchAll(/&s(\d+)-(?:start|end)/g)) {
+        used.add(parseInt(m[1], 10));
+      }
+      const speakers = used.size
+        ? [...used].sort((a, b) => a - b)
+        : [1, 2];
+      const nextNew = (speakers.length ? Math.max(...speakers) : 0) + 1;
+      const list = [];
+      for (const n of speakers) {
+        list.push(`s${n}-start`);
+        list.push(`s${n}-end`);
+      }
+      list.push(`s${nextNew}-start (new speaker)`);
+      list.push(`s${nextNew}-end (new speaker)`);
+      return list.filter((item) => item.startsWith(query));
     }
 
  /* =========================
