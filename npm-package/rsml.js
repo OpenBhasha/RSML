@@ -120,12 +120,13 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .tok-span-prosody       { color:#a63d7e; }
 .tok-span-speaker       { color:#5a4dd0; }
 .tok-span-unknown       { color:#666; }
-/* IDE-style match highlight for the start/end sibling of the tag under caret. */
+/* IDE-style match highlight — a subtle translucent background that
+   doesn't move the glyphs. Applied to all syntax fragments of the
+   tag under the caret (bracket-form opener/mid/closer, and to both
+   siblings of any -start/-end pair). */
 .tok-match {
-  font-weight: 700;
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 2px;
+  background-color: rgba(255, 213, 0, 0.28);
+  border-radius: 3px;
 }
 /* Pitch-contour spans: no background — just a small arrow above the text. */
 .rsml-span.rsml-span-raising-pitch,
@@ -885,23 +886,29 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
     // Character-preserving tokenizer. Only the SYNTAX gets a color; lexical
     // content (verbatim/normalized slots and plain text) stays default.
-    // Every -start/-end token also carries data-* attributes so the caret
-    // handler can highlight matching pairs.
+    // Every syntax fragment carries a `data-group` attribute so all fragments
+    // belonging to the same tag (bracket-form opener/mid/closer, or a
+    // -start/-end pair) can be co-highlighted when the caret lands on one.
     _highlightSource(text) {
       let out = "";
       let i = 0;
       const n = text.length;
       const esc = (s) => this._esc(s);
-      // Reset per-render pair tracking. Pair by (name, occurrence index).
-      this._tagRanges = [];
+
+      // Reset per-render range table: maps a source-character range to the
+      // group id shared by every syntax fragment of that tag.
+      this._synRanges = [];
       const startCount = new Map();
       const endCount = new Map();
-      const recordPair = (name, role, start, end) => {
+      let bracketCounter = 0;
+      const record = (start, end, group) => {
+        this._synRanges.push({ start, end, group });
+      };
+      const pairGroup = (name, role) => {
         const map = role === "start" ? startCount : endCount;
         const idx = map.get(name) || 0;
         map.set(name, idx + 1);
-        this._tagRanges.push({ start, end, name, role, idx });
-        return idx;
+        return `p:${name}:${idx}`;
       };
 
       while (i < n) {
@@ -917,14 +924,18 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
               const cat = prefix === "!" ? "code-mix"
                         : prefix === "#" ? "entity"
                         : "accent";
+              const g = `b${bracketCounter++}`;
               const head = text.slice(i, openBracket + 1);          // "!en["
               const verbatim = text.slice(openBracket + 1, closeBracket);
               const normalized = text.slice(closeBracket + 2, closeParen);
-              out += `<span class="tok-${cat}">${esc(head)}</span>`;
+              record(i, openBracket + 1, g);
+              record(closeBracket, closeBracket + 2, g);
+              record(closeParen, closeParen + 1, g);
+              out += `<span class="tok-${cat}" data-group="${g}">${esc(head)}</span>`;
               out += esc(verbatim);
-              out += `<span class="tok-${cat}">${esc("](")}</span>`;
+              out += `<span class="tok-${cat}" data-group="${g}">${esc("](")}</span>`;
               out += esc(normalized);
-              out += `<span class="tok-${cat}">${esc(")")}</span>`;
+              out += `<span class="tok-${cat}" data-group="${g}">${esc(")")}</span>`;
               i = closeParen + 1;
               continue;
             }
@@ -937,13 +948,17 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
             const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
             if (closeParen !== -1) {
+              const g = `b${bracketCounter++}`;
               const verbatim = text.slice(i + 1, closeBracket);
               const normalized = text.slice(closeBracket + 2, closeParen);
-              out += `<span class="tok-mispronunciation">${esc("[")}</span>`;
+              record(i, i + 1, g);
+              record(closeBracket, closeBracket + 2, g);
+              record(closeParen, closeParen + 1, g);
+              out += `<span class="tok-mispronunciation" data-group="${g}">${esc("[")}</span>`;
               out += esc(verbatim);
-              out += `<span class="tok-mispronunciation">${esc("](")}</span>`;
+              out += `<span class="tok-mispronunciation" data-group="${g}">${esc("](")}</span>`;
               out += esc(normalized);
-              out += `<span class="tok-mispronunciation">${esc(")")}</span>`;
+              out += `<span class="tok-mispronunciation" data-group="${g}">${esc(")")}</span>`;
               i = closeParen + 1;
               continue;
             }
@@ -962,9 +977,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
               const base = name.slice(0, isStart ? -6 : -4);
               const cat = this._spanCategory.get(base) || "unknown";
               cls = `tok-span-${cat}`;
-              const role = isStart ? "start" : "end";
-              const idx = recordPair(base, role, i, i + at[0].length);
-              dataAttrs = ` data-tag="${esc(base)}" data-role="${role}" data-idx="${idx}"`;
+              const g = pairGroup(base, isStart ? "start" : "end");
+              record(i, i + at[0].length, g);
+              dataAttrs = ` data-group="${g}"`;
             } else {
               const cat = this._atCategory.get(name) || "unknown";
               cls = `tok-at-${cat}`;
@@ -979,11 +994,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         if (text[i] === "&") {
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) {
-            const base = sp[1];
-            const role = sp[2];
-            const idx = recordPair(base, role, i, i + sp[0].length);
-            out += `<span class="tok-span-speaker"`
-                 + ` data-tag="${esc(base)}" data-role="${role}" data-idx="${idx}">`
+            const g = pairGroup(sp[1], sp[2]);
+            record(i, i + sp[0].length, g);
+            out += `<span class="tok-span-speaker" data-group="${g}">`
                  + `${esc(sp[0])}</span>`;
             i += sp[0].length;
             continue;
@@ -1005,17 +1018,13 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     _updateMatchHighlight() {
       if (!this._hlContent) return;
       this._clearMatchHighlight();
-      if (!this._tagRanges || !this._tagRanges.length) return;
+      if (!this._synRanges || !this._synRanges.length) return;
       const pos = this.textarea.selectionStart;
-      const hit = this._tagRanges.find((r) => pos >= r.start && pos <= r.end);
+      const hit = this._synRanges.find((r) => pos >= r.start && pos <= r.end);
       if (!hit) return;
-      const partnerRole = hit.role === "start" ? "end" : "start";
-      const sel = (role, idx) =>
-        `[data-tag="${CSS.escape(hit.name)}"][data-role="${role}"][data-idx="${idx}"]`;
-      const els = this._hlContent.querySelectorAll(
-        `${sel(hit.role, hit.idx)}, ${sel(partnerRole, hit.idx)}`
-      );
-      els.forEach((el) => el.classList.add("tok-match"));
+      this._hlContent
+        .querySelectorAll(`[data-group="${CSS.escape(hit.group)}"]`)
+        .forEach((el) => el.classList.add("tok-match"));
     }
 
     _clearMatchHighlight() {
