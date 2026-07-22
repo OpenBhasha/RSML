@@ -104,24 +104,23 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   overflow-wrap: break-word;
   will-change: transform;
 }
-/* Token colors — bracket punctuation stays muted, category chars get the
-   same hue family as the rendered output so the source is readable. */
-.tok-punct { color:#8a8a8a; }
+/* Token colors — text only, no backgrounds. */
+.tok-punct { color:#9aa0a6; }
 .tok-prefix { font-weight: 700; }
 .tok-prefix-code-mix, .tok-type-code-mix { color:#0e8fbf; }
 .tok-prefix-entity,   .tok-type-entity   { color:#b8730a; }
 .tok-prefix-accent,   .tok-type-accent   { color:#7a3fbf; }
-.tok-verbatim   { background: rgba(255, 209, 168, 0.35); border-radius: 2px; }
-.tok-normalized { background: rgba(200, 247, 255, 0.55); border-radius: 2px; }
-.tok-at-hesitation     { color:#7a5a10; background: rgba(255, 240, 179, 0.7); border-radius: 2px; }
-.tok-at-paralinguistic { color:#3a5a10; background: rgba(230, 255, 179, 0.7); border-radius: 2px; }
-.tok-at-other          { color:#324056; background: rgba(224, 230, 240, 0.75); border-radius: 2px; font-style: italic; }
-.tok-at-unknown        { color:#333;    background: rgba(200, 200, 200, 0.6); border-radius: 2px; }
-.tok-span-disfluency    { color:#a35410; background: rgba(255, 224, 179, 0.6); border-radius: 2px; }
-.tok-span-paralinguistic{ color:#3a5a10; background: rgba(230, 255, 179, 0.6); border-radius: 2px; }
-.tok-span-prosody       { color:#a63d7e; background: rgba(255, 214, 240, 0.6); border-radius: 2px; }
-.tok-span-speaker       { color:#5a4dd0; background: rgba(220, 214, 255, 0.6); border-radius: 2px; }
-.tok-span-unknown       { color:#333;    background: rgba(200, 200, 200, 0.5); border-radius: 2px; }
+.tok-verbatim   { color:#b8560a; }
+.tok-normalized { color:#1a7a7a; }
+.tok-at-hesitation     { color:#8a6a10; }
+.tok-at-paralinguistic { color:#3a6a10; }
+.tok-at-other          { color:#324056; font-style: italic; }
+.tok-at-unknown        { color:#666; }
+.tok-span-disfluency    { color:#a35410; }
+.tok-span-paralinguistic{ color:#3a6a10; }
+.tok-span-prosody       { color:#a63d7e; }
+.tok-span-speaker       { color:#5a4dd0; }
+.tok-span-unknown       { color:#666; }
 /* Pitch-contour spans: no background — just a small arrow above the text. */
 .rsml-span.rsml-span-raising-pitch,
 .rsml-span.rsml-span-falling-pitch {
