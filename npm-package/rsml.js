@@ -1583,6 +1583,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
               const idx = map.get(base) || 0;
               map.set(base, idx + 1);
               pushGroup([[i, i + at[0].length]], `p:${base}:${idx}`);
+            } else {
+              // Isolated @-token — self-contained group so it still highlights.
+              pushGroup([[i, i + at[0].length]], `iso:${i}`);
             }
             i += at[0].length;
             continue;
