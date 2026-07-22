@@ -74,6 +74,96 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .rsml-at-paralinguistic  { background-color:#e6ffb3; border:1px solid #b3d977; color:#3a5a10; }
 .rsml-at-other           { background-color:#e0e6f0; border:1px solid #9aacc9; color:#324056; font-style:italic; }
 .rsml-at-unknown         { background-color:#888; color:#fff; border:1px solid #666; }
+
+/* ===== Source-textarea syntax highlight overlay ===== */
+.rsml-hl-container { position: relative; display: block; }
+.rsml-hl-container > textarea.rsml-hl-textarea {
+  position: relative;
+  z-index: 2;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: #212529;
+}
+/* Selection is drawn on the textarea (which is on top); a translucent
+   background lets the highlighted source below stay visible. */
+.rsml-hl-container > textarea.rsml-hl-textarea::selection {
+  background: rgba(35, 132, 232, 0.28);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.rsml-hl-container > textarea.rsml-hl-textarea::-moz-selection {
+  background: rgba(35, 132, 232, 0.28);
+  color: transparent;
+}
+.rsml-hl-container > .rsml-hl-highlights {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  color: #212529;
+  border-color: transparent !important;
+}
+.rsml-hl-content {
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  will-change: transform;
+}
+/* Text-shaping settings must match on both layers or complex scripts
+   (Devanagari / Telugu conjuncts) drift character by character. */
+.rsml-hl-container > textarea.rsml-hl-textarea,
+.rsml-hl-content {
+  font-kerning: normal;
+  font-variant-ligatures: normal;
+  font-variant-numeric: normal;
+  font-variant-caps: normal;
+  font-variant-east-asian: normal;
+  font-feature-settings: normal;
+  font-synthesis: none;
+  font-optical-sizing: auto;
+  text-rendering: auto;
+  text-orientation: mixed;
+  unicode-bidi: isolate;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
+  tab-size: 4;
+  hanging-punctuation: none;
+  text-size-adjust: 100%;
+}
+/* Token colors — every category in its own hue so tags never blur into
+   each other. Lexical content (verbatim/normalized/plain text) is default. */
+/* Bracket-form tags */
+.tok-code-mix         { color:#0e8fbf; }   /* teal      — ! */
+.tok-entity           { color:#b8860b; }   /* gold      — # */
+.tok-accent           { color:#7a3fbf; }   /* violet    — $ */
+.tok-mispronunciation { color:#c62828; }   /* red       — bare [](  ) */
+/* Isolated @-tokens */
+.tok-at-hesitation     { color:#8a7a10; }  /* olive     — @umm @uhh @hmm … */
+.tok-at-paralinguistic { color:#2e7d32; }  /* green     — @laughter @cough … */
+.tok-at-other          { color:#455a64; font-style: italic; }
+                                            /* slate     — @silence @unintelligible @stutter-block */
+.tok-at-unknown        { color:#616161; }
+/* Span-pair @-tokens */
+.tok-span-disfluency    { color:#6d4c41; }  /* brown     — @filler-* @repair-* … */
+.tok-span-paralinguistic{ color:#2e7d32; }  /* green     — @laughing-* @crying-* … */
+.tok-span-prosody       { color:#c2185b; }  /* magenta   — @emphasis-* @*-pitch-* */
+.tok-span-speaker       { color:#4527a0; }  /* purple    — &sN-* */
+.tok-span-unknown       { color:#616161; }
+/* IDE-style match highlight — a subtle translucent background that
+   doesn't move the glyphs. Applied to all syntax fragments of the
+   tag under the caret (bracket-form opener/mid/closer, and to both
+   siblings of any -start/-end pair). */
+.tok-match {
+  background-color: rgba(255, 213, 0, 0.28);
+  border-radius: 3px;
+}
 /* Pitch-contour spans: no background — just a small arrow above the text. */
 .rsml-span.rsml-span-raising-pitch,
 .rsml-span.rsml-span-falling-pitch {
@@ -333,6 +423,12 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 &s1-start आप कैसे हैं? &s1-end &s2-start मैं ठीक हूँ। @laughter &s2-end`;
       }
       this._render();
+      // Prefer CodeMirror 6 as the editing surface (single-layer render, no
+      // overlay drift). Fall back to the plain textarea if CM6 can't load
+      // (offline, strict CSP, etc.).
+      this._bootCM().catch((err) => {
+        console.warn("[RSMLAnnotator] CodeMirror unavailable, using plain textarea:", err);
+      });
     }
 
     // ---------- Public API ----------
@@ -343,6 +439,14 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       window.removeEventListener("resize", this._onScrollOrResize);
       if (this.suggestionsBox && this.suggestionsBox.parentNode) {
         this.suggestionsBox.parentNode.removeChild(this.suggestionsBox);
+      }
+      if (this._hlResizeObserver) {
+        this._hlResizeObserver.disconnect();
+        this._hlResizeObserver = null;
+      }
+      if (this._onSelectionChange) {
+        document.removeEventListener("selectionchange", this._onSelectionChange);
+        this._onSelectionChange = null;
       }
     }
     setValue(str) {
@@ -749,7 +853,253 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       content.innerHTML = html;
       this.output.appendChild(content);
 
+      this._paintHighlight();
       requestAnimationFrame(() => activateTooltips(this.output));
+    }
+
+    /* =========================
+       Source Highlight Overlay
+    ========================= */
+    _installHighlightOverlay() {
+      if (this._hlInstalled) return;
+      this._hlInstalled = true;
+
+      const ta = this.textarea;
+      const container = document.createElement("div");
+      container.className = "rsml-hl-container";
+      ta.parentNode.insertBefore(container, ta);
+      container.appendChild(ta);
+
+      const highlights = document.createElement("div");
+      highlights.className = "rsml-hl-highlights";
+      highlights.setAttribute("aria-hidden", "true");
+      const content = document.createElement("div");
+      content.className = "rsml-hl-content";
+      highlights.appendChild(content);
+      container.insertBefore(highlights, ta);
+
+      this._hlContainer = container;
+      this._hlHighlights = highlights;
+      this._hlContent = content;
+      ta.classList.add("rsml-hl-textarea");
+
+      ta.addEventListener("scroll", () => this._syncHighlightScroll());
+
+      // Caret-position tracking. `selectionStart` isn't reliably updated by
+      // the time `click` / `keyup` fire, so listen to `selectionchange`
+      // (which fires AFTER the caret has actually moved) as the primary
+      // signal, and defer the pointer/keyboard fallbacks to the next frame.
+      this._onSelectionChange = () => {
+        if (document.activeElement === ta) this._updateMatchHighlight();
+      };
+      document.addEventListener("selectionchange", this._onSelectionChange);
+      const deferred = () => requestAnimationFrame(() => this._updateMatchHighlight());
+      ta.addEventListener("click", deferred);
+      ta.addEventListener("keyup", deferred);
+      ta.addEventListener("focus", deferred);
+      ta.addEventListener("blur", () => this._clearMatchHighlight());
+
+      if (typeof ResizeObserver !== "undefined") {
+        this._hlResizeObserver = new ResizeObserver(() => this._syncHighlightStyles());
+        this._hlResizeObserver.observe(ta);
+      }
+
+      this._syncHighlightStyles();
+    }
+
+    _syncHighlightStyles() {
+      if (!this._hlHighlights) return;
+      const cs = getComputedStyle(this.textarea);
+      const hl = this._hlHighlights;
+      const props = [
+        // Font metrics
+        "fontFamily","fontSize","fontWeight","fontStyle",
+        "fontVariant","fontStretch","fontOpticalSizing",
+        "fontKerning","fontFeatureSettings","fontVariationSettings",
+        "fontVariantLigatures","fontVariantNumeric","fontVariantCaps",
+        "fontVariantEastAsian","fontSynthesis",
+        // Text metrics
+        "lineHeight","letterSpacing","wordSpacing","tabSize",
+        "textIndent","textTransform","textAlign","textRendering",
+        "direction","unicodeBidi","writingMode",
+        // Layout
+        "boxSizing",
+        "paddingTop","paddingRight","paddingBottom","paddingLeft",
+        "borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth",
+        "borderTopStyle","borderRightStyle","borderBottomStyle","borderLeftStyle",
+        "borderTopLeftRadius","borderTopRightRadius",
+        "borderBottomLeftRadius","borderBottomRightRadius",
+      ];
+      for (const p of props) {
+        const v = cs[p];
+        if (v !== undefined && v !== "") hl.style[p] = v;
+      }
+      // Border must not paint (backdrop is behind the textarea's border already).
+      hl.style.borderColor = "transparent";
+    }
+
+    _syncHighlightScroll() {
+      if (!this._hlContent) return;
+      const ta = this.textarea;
+      this._hlContent.style.transform =
+        `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
+    }
+
+    _paintHighlight() {
+      if (!this._hlContent) return;
+      this._hlContent.innerHTML = this._highlightSource(this.textarea.value || "");
+      this._syncHighlightScroll();
+      this._updateMatchHighlight();
+    }
+
+    // Character-preserving tokenizer. Only the SYNTAX gets a color; lexical
+    // content (verbatim/normalized slots and plain text) stays default.
+    // Every syntax fragment carries a `data-group` attribute so all fragments
+    // belonging to the same tag (bracket-form opener/mid/closer, or a
+    // -start/-end pair) can be co-highlighted when the caret lands on one.
+    _highlightSource(text) {
+      let out = "";
+      let i = 0;
+      const n = text.length;
+      const esc = (s) => this._esc(s);
+
+      // Reset per-render range table: maps a source-character range to the
+      // group id shared by every syntax fragment of that tag.
+      this._synRanges = [];
+      const startCount = new Map();
+      const endCount = new Map();
+      let bracketCounter = 0;
+      const record = (start, end, group) => {
+        this._synRanges.push({ start, end, group });
+      };
+      const pairGroup = (name, role) => {
+        const map = role === "start" ? startCount : endCount;
+        const idx = map.get(name) || 0;
+        map.set(name, idx + 1);
+        return `p:${name}:${idx}`;
+      };
+
+      while (i < n) {
+        // Prefixed bracket form:  ! # $  + optional type + [v](n)
+        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        if (pm) {
+          const prefix = pm[1];
+          const openBracket = i + pm[0].length - 1;
+          const closeBracket = this._matchBracket(text, openBracket, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              const cat = prefix === "!" ? "code-mix"
+                        : prefix === "#" ? "entity"
+                        : "accent";
+              const g = `b${bracketCounter++}`;
+              const head = text.slice(i, openBracket + 1);          // "!en["
+              const verbatim = text.slice(openBracket + 1, closeBracket);
+              const normalized = text.slice(closeBracket + 2, closeParen);
+              record(i, openBracket + 1, g);
+              record(closeBracket, closeBracket + 2, g);
+              record(closeParen, closeParen + 1, g);
+              out += `<span class="tok-${cat}" data-group="${g}">${esc(head)}</span>`;
+              out += esc(verbatim);
+              out += `<span class="tok-${cat}" data-group="${g}">${esc("](")}</span>`;
+              out += esc(normalized);
+              out += `<span class="tok-${cat}" data-group="${g}">${esc(")")}</span>`;
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+
+        // Bare mispronunciation:  [v](n)
+        if (text[i] === "[") {
+          const closeBracket = this._matchBracket(text, i, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              const g = `b${bracketCounter++}`;
+              const verbatim = text.slice(i + 1, closeBracket);
+              const normalized = text.slice(closeBracket + 2, closeParen);
+              record(i, i + 1, g);
+              record(closeBracket, closeBracket + 2, g);
+              record(closeParen, closeParen + 1, g);
+              out += `<span class="tok-mispronunciation" data-group="${g}">${esc("[")}</span>`;
+              out += esc(verbatim);
+              out += `<span class="tok-mispronunciation" data-group="${g}">${esc("](")}</span>`;
+              out += esc(normalized);
+              out += `<span class="tok-mispronunciation" data-group="${g}">${esc(")")}</span>`;
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+
+        // @tag / @name-start / @name-end
+        if (text[i] === "@") {
+          const at = /^@([\w-]+)/.exec(text.slice(i));
+          if (at) {
+            const name = at[1];
+            const isStart = name.endsWith("-start");
+            const isEnd = !isStart && name.endsWith("-end");
+            let cls, dataAttrs = "";
+            if (isStart || isEnd) {
+              const base = name.slice(0, isStart ? -6 : -4);
+              const cat = this._spanCategory.get(base) || "unknown";
+              cls = `tok-span-${cat}`;
+              const g = pairGroup(base, isStart ? "start" : "end");
+              record(i, i + at[0].length, g);
+              dataAttrs = ` data-group="${g}"`;
+            } else {
+              const cat = this._atCategory.get(name) || "unknown";
+              cls = `tok-at-${cat}`;
+            }
+            out += `<span class="${cls}"${dataAttrs}>${esc(at[0])}</span>`;
+            i += at[0].length;
+            continue;
+          }
+        }
+
+        // Speaker span: &sN-start / &sN-end
+        if (text[i] === "&") {
+          const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
+          if (sp) {
+            const g = pairGroup(sp[1], sp[2]);
+            record(i, i + sp[0].length, g);
+            out += `<span class="tok-span-speaker" data-group="${g}">`
+                 + `${esc(sp[0])}</span>`;
+            i += sp[0].length;
+            continue;
+          }
+        }
+
+        // Literal character.
+        const c = text[i];
+        out += (c === "&") ? "&amp;" : (c === "<") ? "&lt;" : (c === ">") ? "&gt;" : c;
+        i++;
+      }
+
+      // Trailing newline: textareas render an empty final line after '\n',
+      // pre-wrap doesn't unless we add a sentinel.
+      if (text.endsWith("\n")) out += " ";
+      return out;
+    }
+
+    _updateMatchHighlight() {
+      if (!this._hlContent) return;
+      this._clearMatchHighlight();
+      if (!this._synRanges || !this._synRanges.length) return;
+      const pos = this.textarea.selectionStart;
+      const hit = this._synRanges.find((r) => pos >= r.start && pos <= r.end);
+      if (!hit) return;
+      this._hlContent
+        .querySelectorAll(`[data-group="${CSS.escape(hit.group)}"]`)
+        .forEach((el) => el.classList.add("tok-match"));
+    }
+
+    _clearMatchHighlight() {
+      if (!this._hlContent) return;
+      this._hlContent
+        .querySelectorAll(".tok-match")
+        .forEach((el) => el.classList.remove("tok-match"));
     }
 
     /* =========================
@@ -968,6 +1318,372 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+    }
+
+    /* =========================
+       CodeMirror 6 integration
+       -------------------------
+       Loaded lazily via dynamic ESM imports. When it mounts, the plain
+       textarea is hidden and CM becomes the editing surface — a single
+       DOM layer, no overlay, so text and highlights cannot drift.
+    ========================= */
+    async _bootCM() {
+      if (this._cmMounted) return;
+      // Skip if the caller opted out.
+      if (this.opts.disableCodeMirror) return;
+
+      const V = "6";
+      const [stateMod, viewMod, commandsMod, autocompleteMod, languageMod, searchMod] =
+        await Promise.all([
+          import(`https://esm.sh/@codemirror/state@${V}`),
+          import(`https://esm.sh/@codemirror/view@${V}`),
+          import(`https://esm.sh/@codemirror/commands@${V}`),
+          import(`https://esm.sh/@codemirror/autocomplete@${V}`),
+          import(`https://esm.sh/@codemirror/language@${V}`),
+          import(`https://esm.sh/@codemirror/search@${V}`),
+        ]);
+
+      this._cm = {
+        state: stateMod, view: viewMod, commands: commandsMod,
+        autocomplete: autocompleteMod, language: languageMod, search: searchMod,
+      };
+      this._mountCM();
+      this._cmMounted = true;
+    }
+
+    _mountCM() {
+      const { state, view, commands, autocomplete, language } = this._cm;
+      const self = this;
+      const ta = this.textarea;
+
+      // ----- Highlight decorations (StateField) -----
+      const buildDeco = (doc) => {
+        const text = doc.toString();
+        const marks = [];
+        self._walkTokens(text, (from, to, cls) => {
+          marks.push(view.Decoration.mark({ class: cls }).range(from, to));
+        });
+        marks.sort((a, b) => a.from - b.from || a.startSide - b.startSide);
+        return view.Decoration.set(marks);
+      };
+      const decoField = state.StateField.define({
+        create: (st) => buildDeco(st.doc),
+        update: (deco, tr) =>
+          tr.docChanged ? buildDeco(tr.state.doc) : deco.map(tr.changes),
+        provide: (f) => view.EditorView.decorations.from(f),
+      });
+
+      // ----- Match highlight (ViewPlugin, tracks caret) -----
+      const matchPlugin = view.ViewPlugin.fromClass(
+        class {
+          constructor(v) { this.decorations = self._computeCMMatch(v); }
+          update(u) {
+            if (u.docChanged || u.selectionSet) {
+              this.decorations = self._computeCMMatch(u.view);
+            }
+          }
+        },
+        { decorations: (v) => v.decorations }
+      );
+
+      // ----- Autocomplete source -----
+      const rsmlComplete = autocomplete.autocompletion({
+        override: [(ctx) => self._cmComplete(ctx)],
+        activateOnTyping: true,
+        icons: false,
+      });
+
+      // ----- Theme: match the textarea's Bootstrap form-control look -----
+      const cs = getComputedStyle(ta);
+      const themeExt = view.EditorView.theme({
+        "&": {
+          background: cs.backgroundColor || "#fff",
+          border: cs.borderTopStyle && cs.borderTopWidth !== "0px"
+            ? `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor}`
+            : "1px solid #ced4da",
+          borderRadius: cs.borderTopLeftRadius || "0.375rem",
+          fontFamily: cs.fontFamily,
+          fontSize: cs.fontSize,
+          color: cs.color || "#212529",
+          height: cs.height || "250px",
+        },
+        "&.cm-focused": {
+          outline: "none",
+          borderColor: "#86b7fe",
+          boxShadow: "0 0 0 0.25rem rgba(13,110,253,.25)",
+        },
+        ".cm-scroller": { fontFamily: "inherit", lineHeight: cs.lineHeight },
+        ".cm-content": { padding: `${cs.paddingTop} ${cs.paddingRight}` },
+        ".cm-line": { padding: 0 },
+      });
+
+      const startState = state.EditorState.create({
+        doc: ta.value || "",
+        extensions: [
+          view.drawSelection(),
+          view.EditorView.lineWrapping,
+          commands.history(),
+          rsmlComplete,
+          view.keymap.of([
+            ...commands.defaultKeymap,
+            ...commands.historyKeymap,
+            ...autocomplete.completionKeymap,
+            { key: "Mod-z", run: commands.undo, preventDefault: true },
+            { key: "Mod-Shift-z", run: commands.redo, preventDefault: true },
+            { key: "Mod-y", run: commands.redo, preventDefault: true },
+          ]),
+          decoField,
+          matchPlugin,
+          themeExt,
+          view.EditorView.updateListener.of((update) => {
+            if (!update.docChanged) return;
+            ta.value = update.state.doc.toString();
+            self._render();
+          }),
+        ],
+      });
+
+      // Hide the original textarea; mount CM immediately after it.
+      ta.style.display = "none";
+      this.view = new view.EditorView({
+        state: startState,
+        parent: ta.parentNode,
+      });
+      // Insert CM's DOM right after the (now hidden) textarea so layout
+      // slots into the same place.
+      ta.parentNode.insertBefore(this.view.dom, ta.nextSibling);
+    }
+
+    // Shared token walker: emits (from, to, class) tuples for every syntax
+    // fragment. Used by CM decorations; same rules as the parser.
+    _walkTokens(text, add) {
+      let i = 0;
+      const n = text.length;
+      while (i < n) {
+        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        if (pm) {
+          const prefix = pm[1];
+          const openBracket = i + pm[0].length - 1;
+          const closeBracket = this._matchBracket(text, openBracket, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              const cat = prefix === "!" ? "code-mix"
+                        : prefix === "#" ? "entity" : "accent";
+              const cls = `tok-${cat}`;
+              add(i, openBracket + 1, cls);
+              add(closeBracket, closeBracket + 2, cls);
+              add(closeParen, closeParen + 1, cls);
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+        if (text[i] === "[") {
+          const closeBracket = this._matchBracket(text, i, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              add(i, i + 1, "tok-mispronunciation");
+              add(closeBracket, closeBracket + 2, "tok-mispronunciation");
+              add(closeParen, closeParen + 1, "tok-mispronunciation");
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+        if (text[i] === "@") {
+          const at = /^@([\w-]+)/.exec(text.slice(i));
+          if (at) {
+            const name = at[1];
+            const isStart = name.endsWith("-start");
+            const isEnd = !isStart && name.endsWith("-end");
+            let cls;
+            if (isStart || isEnd) {
+              const base = name.slice(0, isStart ? -6 : -4);
+              const cat = this._spanCategory.get(base) || "unknown";
+              cls = `tok-span-${cat}`;
+            } else {
+              const cat = this._atCategory.get(name) || "unknown";
+              cls = `tok-at-${cat}`;
+            }
+            add(i, i + at[0].length, cls);
+            i += at[0].length;
+            continue;
+          }
+        }
+        if (text[i] === "&") {
+          const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
+          if (sp) {
+            add(i, i + sp[0].length, "tok-span-speaker");
+            i += sp[0].length;
+            continue;
+          }
+        }
+        i++;
+      }
+    }
+
+    // Match highlight — find the group containing the caret and mark all
+    // its fragments with `.tok-match`.
+    _computeCMMatch(view) {
+      const { state, view: viewMod } = this._cm;
+      const doc = view.state.doc;
+      const text = doc.toString();
+      const pos = view.state.selection.main.head;
+
+      // Rebuild the group table from the current doc.
+      const groups = [];
+      const startCount = new Map();
+      const endCount = new Map();
+      let bracketCounter = 0;
+      let i = 0;
+      const n = text.length;
+      const pushGroup = (ranges, key) => groups.push({ ranges, key });
+      while (i < n) {
+        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        if (pm) {
+          const openBracket = i + pm[0].length - 1;
+          const closeBracket = this._matchBracket(text, openBracket, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              pushGroup(
+                [[i, openBracket + 1], [closeBracket, closeBracket + 2], [closeParen, closeParen + 1]],
+                `b${bracketCounter++}`
+              );
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+        if (text[i] === "[") {
+          const closeBracket = this._matchBracket(text, i, "[", "]");
+          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen !== -1) {
+              pushGroup(
+                [[i, i + 1], [closeBracket, closeBracket + 2], [closeParen, closeParen + 1]],
+                `b${bracketCounter++}`
+              );
+              i = closeParen + 1;
+              continue;
+            }
+          }
+        }
+        if (text[i] === "@") {
+          const at = /^@([\w-]+)/.exec(text.slice(i));
+          if (at) {
+            const name = at[1];
+            const isStart = name.endsWith("-start");
+            const isEnd = !isStart && name.endsWith("-end");
+            if (isStart || isEnd) {
+              const base = name.slice(0, isStart ? -6 : -4);
+              const map = isStart ? startCount : endCount;
+              const idx = map.get(base) || 0;
+              map.set(base, idx + 1);
+              pushGroup([[i, i + at[0].length]], `p:${base}:${idx}`);
+            } else {
+              // Isolated @-token — self-contained group so it still highlights.
+              pushGroup([[i, i + at[0].length]], `iso:${i}`);
+            }
+            i += at[0].length;
+            continue;
+          }
+        }
+        if (text[i] === "&") {
+          const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
+          if (sp) {
+            const base = sp[1];
+            const map = sp[2] === "start" ? startCount : endCount;
+            const idx = map.get(base) || 0;
+            map.set(base, idx + 1);
+            pushGroup([[i, i + sp[0].length]], `p:${base}:${idx}`);
+            i += sp[0].length;
+            continue;
+          }
+        }
+        i++;
+      }
+
+      // Collapse groups with the same key (start/end pairs) into one.
+      const byKey = new Map();
+      for (const g of groups) {
+        if (!byKey.has(g.key)) byKey.set(g.key, []);
+        byKey.get(g.key).push(...g.ranges);
+      }
+
+      // Find the group whose any range contains the caret.
+      let hit = null;
+      for (const [key, ranges] of byKey) {
+        if (ranges.some(([a, b]) => pos >= a && pos <= b)) {
+          hit = ranges;
+          break;
+        }
+      }
+      const marks = [];
+      if (hit) {
+        for (const [a, b] of hit) {
+          marks.push(viewMod.Decoration.mark({ class: "tok-match" }).range(a, b));
+        }
+      }
+      marks.sort((a, b) => a.from - b.from || a.startSide - b.startSide);
+      return viewMod.Decoration.set(marks);
+    }
+
+    // CM completion source for @ # ! $ & prefixes.
+    _cmComplete(ctx) {
+      const trigger = ctx.matchBefore(/[@#!$&][\w-]*/);
+      if (!trigger) return null;
+      const prefix = trigger.text[0];
+      let options = [];
+      const wrapApply = (insert, cursorRel) =>
+        (view, completion, from, to) => {
+          view.dispatch({
+            changes: { from, to, insert },
+            selection: { anchor: from + cursorRel },
+          });
+        };
+      switch (prefix) {
+        case "@":
+          options = this.opts.tags.map((t) => ({
+            label: t,
+            apply: wrapApply(t + " ", t.length + 1),
+          }));
+          break;
+        case "#":
+          options = Object.keys(this.opts.entities).map((k) => ({
+            label: `#${k}`,
+            detail: this.opts.entities[k],
+            apply: wrapApply(`#${k}[]()`, `#${k}[`.length),
+          }));
+          break;
+        case "!":
+          options = Object.keys(this.opts.languages).map((c) => ({
+            label: `!${c}`,
+            detail: this.opts.languages[c],
+            apply: wrapApply(`!${c}[]()`, `!${c}[`.length),
+          }));
+          break;
+        case "$":
+          options = [{
+            label: "$ (accent)",
+            detail: "accent-name is free-form",
+            apply: wrapApply(`$[]()`, `$[`.length),
+          }];
+          break;
+        case "&":
+          options = this._buildSpeakerSuggestions("").map((s) => {
+            const clean = s.replace(/ .*/, "");
+            return {
+              label: `&${clean}`,
+              detail: s.includes("(") ? "new speaker" : null,
+              apply: wrapApply(`&${clean} `, clean.length + 2),
+            };
+          });
+          break;
+      }
+      return { from: trigger.from, to: trigger.to, options };
     }
   }
 
