@@ -137,22 +137,25 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   hanging-punctuation: none;
   text-size-adjust: 100%;
 }
-/* Token colors — only the syntax (prefix, type, brackets, @-tokens,
-   speaker markers) gets a color. Lexical content (verbatim, normalized,
-   and any text outside tags) stays the default text color. */
-.tok-code-mix         { color:#0e8fbf; }
-.tok-entity           { color:#b8730a; }
-.tok-accent           { color:#7a3fbf; }
-.tok-mispronunciation { color:#c14a1a; }
-.tok-at-hesitation     { color:#8a6a10; }
-.tok-at-paralinguistic { color:#3a6a10; }
-.tok-at-other          { color:#324056; font-style: italic; }
-.tok-at-unknown        { color:#666; }
-.tok-span-disfluency    { color:#a35410; }
-.tok-span-paralinguistic{ color:#3a6a10; }
-.tok-span-prosody       { color:#a63d7e; }
-.tok-span-speaker       { color:#5a4dd0; }
-.tok-span-unknown       { color:#666; }
+/* Token colors — every category in its own hue so tags never blur into
+   each other. Lexical content (verbatim/normalized/plain text) is default. */
+/* Bracket-form tags */
+.tok-code-mix         { color:#0e8fbf; }   /* teal      — ! */
+.tok-entity           { color:#b8860b; }   /* gold      — # */
+.tok-accent           { color:#7a3fbf; }   /* violet    — $ */
+.tok-mispronunciation { color:#c62828; }   /* red       — bare [](  ) */
+/* Isolated @-tokens */
+.tok-at-hesitation     { color:#8a7a10; }  /* olive     — @umm @uhh @hmm … */
+.tok-at-paralinguistic { color:#2e7d32; }  /* green     — @laughter @cough … */
+.tok-at-other          { color:#455a64; font-style: italic; }
+                                            /* slate     — @silence @unintelligible @stutter-block */
+.tok-at-unknown        { color:#616161; }
+/* Span-pair @-tokens */
+.tok-span-disfluency    { color:#6d4c41; }  /* brown     — @filler-* @repair-* … */
+.tok-span-paralinguistic{ color:#2e7d32; }  /* green     — @laughing-* @crying-* … */
+.tok-span-prosody       { color:#c2185b; }  /* magenta   — @emphasis-* @*-pitch-* */
+.tok-span-speaker       { color:#4527a0; }  /* purple    — &sN-* */
+.tok-span-unknown       { color:#616161; }
 /* IDE-style match highlight — a subtle translucent background that
    doesn't move the glyphs. Applied to all syntax fragments of the
    tag under the caret (bracket-form opener/mid/closer, and to both
@@ -1418,7 +1421,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         doc: ta.value || "",
         extensions: [
           view.drawSelection(),
-          view.highlightActiveLine(),
           view.EditorView.lineWrapping,
           commands.history(),
           rsmlComplete,
