@@ -403,6 +403,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         this._hlResizeObserver.disconnect();
         this._hlResizeObserver = null;
       }
+      if (this._onSelectionChange) {
+        document.removeEventListener("selectionchange", this._onSelectionChange);
+        this._onSelectionChange = null;
+      }
     }
     setValue(str) {
       this.textarea.value = str || "";
@@ -839,11 +843,21 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       ta.classList.add("rsml-hl-textarea");
 
       ta.addEventListener("scroll", () => this._syncHighlightScroll());
-      const onCaret = () => this._updateMatchHighlight();
-      ta.addEventListener("click", onCaret);
-      ta.addEventListener("keyup", onCaret);
-      ta.addEventListener("focus", onCaret);
+
+      // Caret-position tracking. `selectionStart` isn't reliably updated by
+      // the time `click` / `keyup` fire, so listen to `selectionchange`
+      // (which fires AFTER the caret has actually moved) as the primary
+      // signal, and defer the pointer/keyboard fallbacks to the next frame.
+      this._onSelectionChange = () => {
+        if (document.activeElement === ta) this._updateMatchHighlight();
+      };
+      document.addEventListener("selectionchange", this._onSelectionChange);
+      const deferred = () => requestAnimationFrame(() => this._updateMatchHighlight());
+      ta.addEventListener("click", deferred);
+      ta.addEventListener("keyup", deferred);
+      ta.addEventListener("focus", deferred);
       ta.addEventListener("blur", () => this._clearMatchHighlight());
+
       if (typeof ResizeObserver !== "undefined") {
         this._hlResizeObserver = new ResizeObserver(() => this._syncHighlightStyles());
         this._hlResizeObserver.observe(ta);
