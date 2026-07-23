@@ -788,6 +788,15 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             i = closeBracket + 2;
             continue;
           }
+          // Nested-brackets error: verbatim must not contain `[]()`.
+          const verbatim = text.slice(openBracket + 1, closeBracket);
+          if (/[\[\]()]/.test(verbatim)) {
+            errors.push({
+              start: i, end: closeParen + 1,
+              kind: "nested-tag",
+              message: "Nested brackets are not allowed inside `[verbatim]`",
+            });
+          }
           // Warn on unknown type / lang (only if the user actually typed one).
           if (type) {
             if (prefix === "#" && !this.opts.entities[type]) {
@@ -809,25 +818,17 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           continue;
         }
 
-        // Bare `[…](…)` — brackets are NEVER prose. Any `[` that doesn't
-        // form a valid tag is an error.
+        // Bare `[…](…)` — only flag broken tag shapes. Plain `[note]` in
+        // prose (no `(` after) is left alone.
         if (text[i] === "[") {
           const closeBracket = this._matchBracket(text, i, "[", "]");
           if (closeBracket === -1) {
-            errors.push({
-              start: i, end: i + 1,
-              kind: "unclosed-bracket",
-              message: "Unclosed `[`",
-            });
+            // No matching `]` anywhere — could just be prose `[…`. Skip.
             i++;
             continue;
           }
           if (text[closeBracket + 1] !== "(") {
-            errors.push({
-              start: i, end: closeBracket + 1,
-              kind: "invalid-tag",
-              message: "`[verbatim]` must be followed by `(normalized)`",
-            });
+            // Bare `[X]` with no `(` after — treat as prose.
             i = closeBracket + 1;
             continue;
           }
@@ -841,12 +842,24 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             i = closeBracket + 2;
             continue;
           }
+          // Valid `[v](n)` — but verbatim must not contain nested brackets.
+          const verbatim = text.slice(i + 1, closeBracket);
+          if (/[\[\]()]/.test(verbatim)) {
+            errors.push({
+              start: i, end: closeParen + 1,
+              kind: "nested-tag",
+              message: "Nested brackets are not allowed inside `[verbatim]`",
+            });
+          }
           i = closeParen + 1;
           continue;
         }
 
-        // @tag — warn on unknown names.
+        // @tag — warn on unknown names. Skip when the `@` is part of an
+        // email (preceded by a word character).
         if (text[i] === "@") {
+          const prev = i > 0 ? text[i - 1] : " ";
+          if (/\w/.test(prev)) { i++; continue; }
           const at = /^@([\w-]+)/.exec(text.slice(i));
           if (at) {
             const name = at[1];
@@ -891,40 +904,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           // Any other `&` at all is stray — flagged below.
         }
 
-        // Fall-through stray character detection. Runs only when NONE of the
-        // valid tag patterns above consumed this position. RSML treats every
-        // one of these as syntactic — prose transcripts never contain them
-        // in isolation.
-        const c = text[i];
-        if (c === "#" || c === "$" || c === "*"
-            || c === "(" || c === ")" || c === "[" || c === "]"
-            || c === "{" || c === "}") {
-          errors.push({
-            start: i, end: i + 1,
-            kind: "stray-char",
-            message: `Stray \`${c}\``,
-          });
-        } else if (c === "!" && /[A-Za-z]/.test(text[i + 1] || "")) {
-          // `!` is fine as punctuation (isolated, trailing, or `!!!`), but
-          // never as a prefix on a bare word — that's a broken tag.
-          errors.push({
-            start: i, end: i + 1,
-            kind: "stray-prefix",
-            message: "`!` before a letter — must be followed by `[verbatim](normalized)`",
-          });
-        } else if (c === "@") {
-          errors.push({
-            start: i, end: i + 1,
-            kind: "stray-at",
-            message: "Stray `@` — must be followed by a tag name",
-          });
-        } else if (c === "&") {
-          errors.push({
-            start: i, end: i + 1,
-            kind: "stray-amp",
-            message: "Stray `&` — must be followed by `sN-start` or `sN-end`",
-          });
-        }
+        // Any other character is prose — no error. Transcripts contain
+        // hashtags (`#dripping`), prices (`$500`), asterisks, plain
+        // parentheses, and stray `&`/`@` (like `M&M`, emails) all the time.
+        // Only broken tag SHAPES above are flagged.
         i++;
       }
 
