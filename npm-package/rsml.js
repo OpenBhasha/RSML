@@ -788,13 +788,15 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             i = closeBracket + 2;
             continue;
           }
-          // Nested-brackets error: verbatim must not contain `[]()`.
-          const verbatim = text.slice(openBracket + 1, closeBracket);
-          if (/[\[\]()]/.test(verbatim)) {
+          // Verbatim uses the same prose rules as the outer text — specials
+          // are only allowed inside the normalized slot.
+          this._flagProseSlice(text, openBracket + 1, closeBracket, errors);
+          // Nested tag inside normalized (an inner `](` gives it away).
+          if (text.slice(closeBracket + 2, closeParen).includes("](")) {
             errors.push({
               start: i, end: closeParen + 1,
               kind: "nested-tag",
-              message: "Nested brackets are not allowed inside `[verbatim]`",
+              message: "Nested tag inside `(normalized)`",
             });
           }
           // Warn on unknown type / lang (only if the user actually typed one).
@@ -818,17 +820,24 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           continue;
         }
 
-        // Bare `[…](…)` — only flag broken tag shapes. Plain `[note]` in
-        // prose (no `(` after) is left alone.
+        // Bare `[…](…)` — plain brackets aren't prose either, so flag any
+        // `[` that doesn't form a valid mispronunciation tag.
         if (text[i] === "[") {
           const closeBracket = this._matchBracket(text, i, "[", "]");
           if (closeBracket === -1) {
-            // No matching `]` anywhere — could just be prose `[…`. Skip.
+            errors.push({
+              start: i, end: i + 1,
+              kind: "stray-char",
+              message: "Stray `[`",
+            });
             i++;
             continue;
           }
           if (text[closeBracket + 1] !== "(") {
-            // Bare `[X]` with no `(` after — treat as prose.
+            // `[X]` not followed by `(` — brackets in prose are still stray.
+            errors.push({ start: i, end: i + 1, kind: "stray-char", message: "Stray `[`" });
+            errors.push({ start: closeBracket, end: closeBracket + 1, kind: "stray-char", message: "Stray `]`" });
+            this._flagProseSlice(text, i + 1, closeBracket, errors);
             i = closeBracket + 1;
             continue;
           }
@@ -842,53 +851,60 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             i = closeBracket + 2;
             continue;
           }
-          // Valid `[v](n)` — but verbatim must not contain nested brackets.
-          const verbatim = text.slice(i + 1, closeBracket);
-          if (/[\[\]()]/.test(verbatim)) {
+          // Valid `[v](n)` — flag prose issues in verbatim; look for nested
+          // tag shapes in normalized.
+          this._flagProseSlice(text, i + 1, closeBracket, errors);
+          if (text.slice(closeBracket + 2, closeParen).includes("](")) {
             errors.push({
               start: i, end: closeParen + 1,
               kind: "nested-tag",
-              message: "Nested brackets are not allowed inside `[verbatim]`",
+              message: "Nested tag inside `(normalized)`",
             });
           }
           i = closeParen + 1;
           continue;
         }
 
-        // @tag — warn on unknown names. Skip when the `@` is part of an
-        // email (preceded by a word character).
+        // @tag — email-context `@` (preceded by a word char) is stray in
+        // prose. Otherwise try `@word` and warn on unknown names.
         if (text[i] === "@") {
           const prev = i > 0 ? text[i - 1] : " ";
-          if (/\w/.test(prev)) { i++; continue; }
-          const at = /^@([\w-]+)/.exec(text.slice(i));
-          if (at) {
-            const name = at[1];
-            const isStart = name.endsWith("-start");
-            const isEnd = !isStart && name.endsWith("-end");
-            let known;
-            if (isStart || isEnd) {
-              const base = name.slice(0, isStart ? -6 : -4);
-              known = this._spanCategory.has(base);
-            } else {
-              known = this._atCategory.has(name);
-            }
-            if (!known && !seenOrphan.has(i)) {
-              warnings.push({
-                start: i, end: i + at[0].length,
-                kind: "unknown-tag",
-                message: `Unknown \`@${name}\` — not in configured lists`,
-              });
-            }
-            i += at[0].length;
+          if (/\w/.test(prev)) {
+            errors.push({ start: i, end: i + 1, kind: "stray-at", message: "Stray `@` in prose" });
+            i++;
             continue;
           }
+          const at = /^@([\w-]+)/.exec(text.slice(i));
+          if (!at) {
+            errors.push({ start: i, end: i + 1, kind: "stray-at", message: "Stray `@` — must be followed by a tag name" });
+            i++;
+            continue;
+          }
+          const name = at[1];
+          const isStart = name.endsWith("-start");
+          const isEnd = !isStart && name.endsWith("-end");
+          let known;
+          if (isStart || isEnd) {
+            const base = name.slice(0, isStart ? -6 : -4);
+            known = this._spanCategory.has(base);
+          } else {
+            known = this._atCategory.has(name);
+          }
+          if (!known && !seenOrphan.has(i)) {
+            warnings.push({
+              start: i, end: i + at[0].length,
+              kind: "unknown-tag",
+              message: `Unknown \`@${name}\` — not in configured lists`,
+            });
+          }
+          i += at[0].length;
+          continue;
         }
 
         // Speaker — the only accepted shape is &sN-start / &sN-end.
         if (text[i] === "&") {
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) { i += sp[0].length; continue; }
-          // `&s<digits>` looking intentional but malformed.
           const partial = /^&s\d+[\w-]*/.exec(text.slice(i));
           if (partial) {
             errors.push({
@@ -901,17 +917,92 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             i += partial[0].length;
             continue;
           }
-          // Any other `&` at all is stray — flagged below.
+          // Any other `&` is stray in prose.
+          errors.push({ start: i, end: i + 1, kind: "stray-amp", message: "Stray `&`" });
+          i++;
+          continue;
         }
 
-        // Any other character is prose — no error. Transcripts contain
-        // hashtags (`#dripping`), prices (`$500`), asterisks, plain
-        // parentheses, and stray `&`/`@` (like `M&M`, emails) all the time.
-        // Only broken tag SHAPES above are flagged.
+        // Prose stray characters. `#word` / `$word` / `!word` runs are
+        // highlighted as a single range so the whole broken sequence is
+        // visible; lone specials get a one-char range.
+        const c = text[i];
+        if (c === "#" || c === "$") {
+          const m = /^[#$][\w-]*/.exec(text.slice(i));
+          const len = m[0].length;
+          errors.push({
+            start: i, end: i + len,
+            kind: "stray-char",
+            message: `Stray \`${m[0]}\` — specials only belong inside \`(normalized)\``,
+          });
+          i += len;
+          continue;
+        }
+        if (c === "!") {
+          const prev = i > 0 ? text[i - 1] : "";
+          const next = text[i + 1] || "";
+          // OK when trailing a word, isolated, or repeated. Error only when
+          // it's a bare-word prefix like `!hello` / `!500`.
+          if (/\w/.test(prev) || !/\w/.test(next)) {
+            i++;
+            continue;
+          }
+          const m = /^!\w[\w-]*/.exec(text.slice(i));
+          const len = m ? m[0].length : 1;
+          errors.push({
+            start: i, end: i + len,
+            kind: "stray-prefix",
+            message: `Stray \`${text.slice(i, i + len)}\` — \`!\` may only trail a word or repeat`,
+          });
+          i += len;
+          continue;
+        }
+        if (c === "*" || c === "(" || c === ")" || c === "]" || c === "{" || c === "}") {
+          errors.push({
+            start: i, end: i + 1,
+            kind: "stray-char",
+            message: `Stray \`${c}\``,
+          });
+        }
         i++;
       }
 
       return { errors, warnings };
+    }
+
+    // Scan a slice of `text` under prose rules and push stray-char /
+    // stray-prefix / stray-at / stray-amp errors into `errors`. Used for
+    // `[verbatim]` slots (which follow the same rules as free prose).
+    _flagProseSlice(text, from, to, errors) {
+      let i = from;
+      while (i < to) {
+        const c = text[i];
+        if (c === "#" || c === "$") {
+          const m = /^[#$][\w-]*/.exec(text.slice(i, to));
+          const len = m[0].length;
+          errors.push({ start: i, end: i + len, kind: "stray-char", message: `Stray \`${m[0]}\`` });
+          i += len;
+          continue;
+        }
+        if (c === "!") {
+          const prev = i > from ? text[i - 1] : "";
+          const next = text[i + 1] || "";
+          if (/\w/.test(prev) || !/\w/.test(next)) { i++; continue; }
+          const m = /^!\w[\w-]*/.exec(text.slice(i, to));
+          const len = m ? m[0].length : 1;
+          errors.push({ start: i, end: i + len, kind: "stray-prefix", message: `Stray \`${text.slice(i, i + len)}\`` });
+          i += len;
+          continue;
+        }
+        if (c === "@") {
+          errors.push({ start: i, end: i + 1, kind: "stray-at", message: "Stray `@`" });
+        } else if (c === "&") {
+          errors.push({ start: i, end: i + 1, kind: "stray-amp", message: "Stray `&`" });
+        } else if (c === "*" || c === "(" || c === ")" || c === "[" || c === "]" || c === "{" || c === "}") {
+          errors.push({ start: i, end: i + 1, kind: "stray-char", message: `Stray \`${c}\`` });
+        }
+        i++;
+      }
     }
 
     _buildOrphanChip(rawToken, srcStart, srcEnd) {
