@@ -177,6 +177,53 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .rsml-editor-status .rsml-error-count { color: #dc3545; font-weight: 600; }
 .rsml-editor-status .rsml-warning-count { color: #d68910; font-weight: 600; }
 .rsml-editor-status .rsml-status-sep { color: #adb5bd; }
+/* Hover tooltip for issues (CM6's hoverTooltip wraps this in .cm-tooltip). */
+.rsml-hover-tip {
+  padding: 8px 12px;
+  max-width: 340px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: #212529;
+}
+.rsml-hover-tip .rsml-hover-badge {
+  display: inline-block;
+  font-size: 0.68em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  color: #fff;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.rsml-hover-tip-error   .rsml-hover-badge { background: #dc3545; }
+.rsml-hover-tip-warning .rsml-hover-badge { background: #d68910; }
+.rsml-hover-tip .rsml-hover-kind {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: #6c757d;
+  vertical-align: middle;
+}
+.rsml-hover-tip .rsml-hover-msg {
+  margin-top: 6px;
+  color: #212529;
+  font-weight: 500;
+}
+.rsml-hover-tip .rsml-hover-action {
+  margin-top: 6px;
+  color: #495057;
+  font-style: italic;
+  border-top: 1px solid #dee2e6;
+  padding-top: 6px;
+}
+.cm-tooltip:has(.rsml-hover-tip) {
+  background: #fff !important;
+  border: 1px solid #dee2e6 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 6px 14px rgba(0,0,0,.18) !important;
+  overflow: hidden;
+}
 /* Pitch-contour spans: inline (wraps naturally with content) with an inline
    arrow prefix — no absolute positioning, so the arrow can never orphan
    at the end of a line while its content wraps to the next. */
@@ -1132,6 +1179,29 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     }
 
     // ---------- Internal: Misc ----------
+    // Human-readable next-step for each issue kind — shown at the bottom
+    // of the hover tooltip.
+    _actionForKind(kind) {
+      switch (kind) {
+        case "orphan":            return "Add the matching -start or -end, or remove this tag.";
+        case "unclosed-bracket":  return "Close with a matching ].";
+        case "unclosed-paren":    return "Close with a matching ).";
+        case "missing-paren":     return "Add (normalized) after the ].";
+        case "missing-bracket":   return "A prefix must be followed by [verbatim](normalized), not (…).";
+        case "stray-bracket":     return "A prefix must be followed by [verbatim](normalized).";
+        case "stray-char":        return "Move this into a (normalized) slot, or remove it.";
+        case "stray-at":          return "Use a valid @tag, or move the @ into a (normalized) slot.";
+        case "stray-amp":         return "Use &sN-start / &sN-end, or move the & into a (normalized) slot.";
+        case "stray-prefix":      return "! may only trail a word, stand alone, or repeat — not prefix another word.";
+        case "malformed-speaker": return "Speaker tag must be &sN-start or &sN-end.";
+        case "nested-tag":        return "Nested tags aren't allowed. Split the tag apart or move the inner tag out.";
+        case "unknown-entity":    return "Not in configured entity types. Add it to opts.entities or use a known type.";
+        case "unknown-language":  return "Not in configured languages. Add it to opts.languages or use a known code.";
+        case "unknown-tag":       return "Not in configured @-tag lists. Add it to opts.hesitations / isolatedParalinguistics / isolatedOther, or use a known name.";
+        default:                  return "";
+      }
+    }
+
     _esc(s) {
       return String(s)
         .replace(/&/g, "&amp;")
@@ -1217,6 +1287,36 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         },
         { decorations: (v) => v.decorations }
       );
+
+      // ----- Hover-tooltip for errors / warnings -----
+      const hoverTip = view.hoverTooltip((v, pos) => {
+        const { errors, warnings } = self._findIssues(v.state.doc.toString());
+        const all = [
+          ...errors.map((e) => ({ ...e, severity: "error" })),
+          ...warnings.map((w) => ({ ...w, severity: "warning" })),
+        ];
+        // Prefer the tightest range containing the caret so an outer
+        // nested-tag range doesn't overshadow the inner stray char.
+        const hits = all.filter((x) => pos >= x.start && pos <= x.end);
+        if (!hits.length) return null;
+        hits.sort((a, b) => (a.end - a.start) - (b.end - b.start));
+        const hit = hits[0];
+        return {
+          pos: hit.start,
+          end: hit.end,
+          above: true,
+          create() {
+            const dom = document.createElement("div");
+            dom.className = `rsml-hover-tip rsml-hover-tip-${hit.severity}`;
+            dom.innerHTML =
+              `<span class="rsml-hover-badge">${hit.severity === "error" ? "ERROR" : "WARNING"}</span>`
+              + `<span class="rsml-hover-kind">${self._esc(hit.kind)}</span>`
+              + `<div class="rsml-hover-msg">${self._esc(hit.message.replace(/`/g, ""))}</div>`
+              + `<div class="rsml-hover-action">${self._esc(self._actionForKind(hit.kind))}</div>`;
+            return { dom };
+          },
+        };
+      }, { hideOnChange: true });
 
       // ----- Autocomplete source -----
       const rsmlComplete = autocomplete.autocompletion({
@@ -1395,6 +1495,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           ]),
           decoField,
           matchPlugin,
+          hoverTip,
           themeExt,
           view.EditorView.updateListener.of((update) => {
             if (!update.docChanged) return;
