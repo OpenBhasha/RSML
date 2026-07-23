@@ -26,7 +26,7 @@
 .rsml-content {
   white-space: pre-wrap;   /* preserves \n */
   word-break: break-word;
-  line-height: 2.1;
+  line-height: 1.9;
 }
 .rsml-content > * { line-height: inherit; }
 .rsml-suggestions {
@@ -58,10 +58,15 @@
 
 code-mix, accent, mispronunciation, entity,
 .rsml-span, .rsml-at {
-  display: inline !important;
+  /* inline-block keeps a chip atomic: if it doesn't fit at the current
+     line position it moves to the next line as a whole unit, never split. */
+  display: inline-block !important;
   padding: 1px 4px;
   border-radius: 4px;
   font-size: 0.95em;
+  /* Prevent internal word-wrap so a chip stays on a single line where
+     possible; overrideable per-category if very long content is expected. */
+  white-space: nowrap;
 }
 code-mix { background-color:#c8f7ff; border:1px solid #7fd7ea; }
 accent { background-color:#e2caff; border:1px solid #c18eff; }
