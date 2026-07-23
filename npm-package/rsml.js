@@ -1858,24 +1858,41 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           }));
           break;
         case "#":
-          options = Object.keys(this.opts.entities).map((k) => ({
-            label: `#${k}`,
-            detail: this.opts.entities[k],
-            apply: bracketApply(`#${k}`),
-          }));
+          options = [
+            {
+              label: "# (unspecified type)",
+              detail: "entity — type left blank",
+              apply: bracketApply(`#`),
+              boost: 1,
+            },
+            ...Object.keys(this.opts.entities).map((k) => ({
+              label: `#${k}`,
+              detail: this.opts.entities[k],
+              apply: bracketApply(`#${k}`),
+            })),
+          ];
           break;
         case "!":
-          options = Object.keys(this.opts.languages).map((c) => ({
-            label: `!${c}`,
-            detail: this.opts.languages[c],
-            apply: bracketApply(`!${c}`),
-          }));
+          options = [
+            {
+              label: "! (unspecified language)",
+              detail: "code-mix — language left blank",
+              apply: bracketApply(`!`),
+              boost: 1,
+            },
+            ...Object.keys(this.opts.languages).map((c) => ({
+              label: `!${c}`,
+              detail: this.opts.languages[c],
+              apply: bracketApply(`!${c}`),
+            })),
+          ];
           break;
         case "$":
           options = [{
-            label: "$ (accent)",
-            detail: "accent-name is free-form",
+            label: "$ (unspecified accent)",
+            detail: "accent — name is free-form or blank",
             apply: bracketApply(`$`),
+            boost: 1,
           }];
           break;
         case "&":
