@@ -193,19 +193,19 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .rsml-span.rsml-span-falling-pitch::before {
   content: "↘\\00a0"; color:#06c; font-weight: 700;
 }
-/* Speaker: no highlight box, just a small "Speaker N" label at the turn start. */
-.rsml-speaker { background: transparent; border: none; padding: 0; border-radius: 0; }
+/* Speaker: the label sits on its own line before the turn content. */
+.rsml-speaker { background: transparent; border: none; padding: 0; border-radius: 0; display: block; }
 .rsml-speaker-label {
-  display: inline-block;
+  display: block;
+  width: fit-content;
   font-size: 0.7em;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: #5a4dd0;
-  padding: 1px 6px;
+  padding: 2px 8px;
   border: 1px solid #cfc7ff;
   border-radius: 3px;
-  margin-right: 4px;
-  vertical-align: baseline;
+  margin: 6px 0 4px;
   text-transform: uppercase;
 }
 .rsml-span-orphan { outline:1px dashed #d33; }
@@ -1217,7 +1217,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             if (sp[2] === "start") {
               const num = sp[1].slice(1);
               out += `<span class="rsml-speaker" data-speaker="${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">`
-                   + `<span class="rsml-speaker-label" data-bs-toggle="tooltip" data-bs-title="speaker turn: ${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">Speaker ${this._esc(num)}</span> `;
+                   + `<span class="rsml-speaker-label" data-bs-toggle="tooltip" data-bs-title="speaker turn: ${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">Speaker ${this._esc(num)}:</span>`;
             } else {
               out += `</span>`;
             }
