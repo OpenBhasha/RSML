@@ -151,10 +151,16 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   background-color: rgba(255, 213, 0, 0.28);
   border-radius: 3px;
 }
-/* Editor-side orphan indicator: red wavy underline on an unpaired
-   -start / -end token so the error is visible in the source too. */
-.tok-orphan {
+/* Editor-side error / warning indicators.
+   Errors (structural — orphan, unclosed bracket): red wavy underline.
+   Warnings (semantic — unknown type / lang / @-tag): amber wavy underline. */
+.tok-orphan, .tok-error {
   text-decoration: underline wavy #dc3545;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.tok-warning {
+  text-decoration: underline wavy #f0ad4e;
   text-underline-offset: 2px;
   text-decoration-thickness: 1px;
 }
@@ -162,16 +168,15 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .rsml-editor-status {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 4px 10px;
   font-size: 0.8em;
   color: #6c757d;
   font-family: system-ui, -apple-system, sans-serif;
 }
-.rsml-editor-status .rsml-error-count {
-  color: #dc3545;
-  font-weight: 600;
-}
+.rsml-editor-status .rsml-error-count { color: #dc3545; font-weight: 600; }
+.rsml-editor-status .rsml-warning-count { color: #d68910; font-weight: 600; }
+.rsml-editor-status .rsml-status-sep { color: #adb5bd; }
 /* Pitch-contour spans: inline (wraps naturally with content) with an inline
    arrow prefix — no absolute positioning, so the arrow can never orphan
    at the end of a line while its content wraps to the next. */
@@ -685,6 +690,170 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       return orphans;
     }
 
+    // Full validation pass. Returns:
+    //   { errors:   [{ start, end, kind, message }, ...],   // structural
+    //     warnings: [{ start, end, kind, message }, ...] }  // semantic
+    //
+    // Errors: orphan -start/-end, unclosed `[`, unclosed `(`, `]` not
+    // followed by `(` after a prefix.
+    // Warnings: unknown entity type (#XYZ), unknown language code (!xy),
+    // unknown @-tag (@foo, @bar-start with no such span, …).
+    _findIssues(text) {
+      const errors = [];
+      const warnings = [];
+      const seenOrphan = new Set();
+
+      // 1) Orphan -start / -end (reuse the existing detector).
+      for (const pos of this._findOrphans(text)) {
+        seenOrphan.add(pos);
+        const rest = text.slice(pos);
+        const m = /^@[\w-]+|^&s\d+-(?:start|end)/.exec(rest);
+        if (!m) continue;
+        const token = m[0];
+        const role = token.endsWith("-start") ? "start" : "end";
+        const missing = role === "start" ? "-end" : "-start";
+        errors.push({
+          start: pos, end: pos + token.length,
+          kind: "orphan",
+          message: `Unpaired ${role}: no matching ${missing}`,
+        });
+      }
+
+      // 2) Structural + unknown-type walk.
+      let i = 0;
+      const n = text.length;
+      while (i < n) {
+        // Prefix bracket form
+        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        if (pm) {
+          const prefix = pm[1];
+          const type = pm[2] || "";
+          const openBracket = i + pm[0].length - 1;
+          const closeBracket = this._matchBracket(text, openBracket, "[", "]");
+          if (closeBracket === -1) {
+            errors.push({
+              start: i, end: openBracket + 1,
+              kind: "unclosed-bracket",
+              message: "Unclosed `[` — expected matching `]`",
+            });
+            i = openBracket + 1;
+            continue;
+          }
+          if (text[closeBracket + 1] !== "(") {
+            errors.push({
+              start: closeBracket, end: closeBracket + 1,
+              kind: "missing-paren",
+              message: "Expected `(` after `]`",
+            });
+            i = closeBracket + 1;
+            continue;
+          }
+          const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+          if (closeParen === -1) {
+            errors.push({
+              start: closeBracket + 1, end: closeBracket + 2,
+              kind: "unclosed-paren",
+              message: "Unclosed `(`",
+            });
+            i = closeBracket + 2;
+            continue;
+          }
+          // Warn on unknown type / lang (only if the user actually typed one).
+          if (type) {
+            if (prefix === "#" && !this.opts.entities[type]) {
+              warnings.push({
+                start: i + 1, end: i + 1 + type.length,
+                kind: "unknown-entity",
+                message: `Unknown entity type: \`#${type}\``,
+              });
+            } else if (prefix === "!" && !this.opts.languages[type.toLowerCase()]) {
+              warnings.push({
+                start: i + 1, end: i + 1 + type.length,
+                kind: "unknown-language",
+                message: `Unknown language code: \`!${type}\``,
+              });
+            }
+            // $ accents are free-form; no warning.
+          }
+          i = closeParen + 1;
+          continue;
+        }
+
+        // Bare `[…]` — only flag if it looks like an intended tag,
+        // i.e. immediately followed by `(`.
+        if (text[i] === "[") {
+          const closeBracket = this._matchBracket(text, i, "[", "]");
+          if (closeBracket === -1) {
+            // Only flag if what follows *would have* been a tag payload
+            // (a `](` shortly after). Otherwise treat `[` as prose.
+            const nextParen = text.indexOf("](", i);
+            if (nextParen !== -1 && nextParen < text.indexOf("\n", i) + 1) {
+              errors.push({
+                start: i, end: i + 1,
+                kind: "unclosed-bracket",
+                message: "Unclosed `[`",
+              });
+            }
+            i++;
+            continue;
+          }
+          if (text[closeBracket + 1] === "(") {
+            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+            if (closeParen === -1) {
+              errors.push({
+                start: closeBracket + 1, end: closeBracket + 2,
+                kind: "unclosed-paren",
+                message: "Unclosed `(`",
+              });
+              i = closeBracket + 2;
+              continue;
+            }
+            i = closeParen + 1;
+            continue;
+          }
+          // Bare `[…]` with no `(` — treat as prose, not a tag.
+          i = closeBracket + 1;
+          continue;
+        }
+
+        // @tag — warn on unknown names.
+        if (text[i] === "@") {
+          const at = /^@([\w-]+)/.exec(text.slice(i));
+          if (at) {
+            const name = at[1];
+            const isStart = name.endsWith("-start");
+            const isEnd = !isStart && name.endsWith("-end");
+            let known;
+            if (isStart || isEnd) {
+              const base = name.slice(0, isStart ? -6 : -4);
+              known = this._spanCategory.has(base);
+            } else {
+              known = this._atCategory.has(name);
+            }
+            if (!known && !seenOrphan.has(i)) {
+              warnings.push({
+                start: i, end: i + at[0].length,
+                kind: "unknown-tag",
+                message: `Unknown \`@${name}\` — not in configured lists`,
+              });
+            }
+            i += at[0].length;
+            continue;
+          }
+        }
+
+        // Speaker — the only accepted shape is &sN-start / &sN-end.
+        if (text[i] === "&") {
+          const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
+          if (sp) { i += sp[0].length; continue; }
+        }
+
+        i++;
+      }
+
+      return { errors, warnings };
+    }
+
     _buildOrphanChip(rawToken, srcStart, srcEnd) {
       const role = rawToken.endsWith("-start") ? "start" : "end";
       const missing = role === "start" ? "-end" : "-start";
@@ -862,6 +1031,19 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         self._walkTokens(text, (from, to, cls) => {
           marks.push(view.Decoration.mark({ class: cls }).range(from, to));
         });
+        const { errors, warnings } = self._findIssues(text);
+        for (const e of errors) {
+          marks.push(view.Decoration.mark({
+            class: "tok-error",
+            attributes: { title: e.message.replace(/`/g, "") },
+          }).range(e.start, e.end));
+        }
+        for (const w of warnings) {
+          marks.push(view.Decoration.mark({
+            class: "tok-warning",
+            attributes: { title: w.message.replace(/`/g, "") },
+          }).range(w.start, w.end));
+        }
         marks.sort((a, b) => a.from - b.from || a.startSide - b.startSide);
         return view.Decoration.set(marks);
       };
@@ -1089,19 +1271,28 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       this._updateStatus();
     }
 
-    // Recompute the orphan count and paint the status bar. Hidden when zero.
+    // Recompute error + warning counts and paint the status bar.
     _updateStatus() {
       if (!this._statusEl) return;
-      const n = this._findOrphans(this.textarea.value || "").size;
-      if (n === 0) {
+      const { errors, warnings } = this._findIssues(this.textarea.value || "");
+      if (errors.length === 0 && warnings.length === 0) {
         this._statusEl.textContent = "";
         this._statusEl.style.display = "none";
-      } else {
-        this._statusEl.style.display = "";
-        this._statusEl.innerHTML =
-          `<span class="rsml-error-count">⚠ ${n} error${n === 1 ? "" : "s"}</span>`
-          + ` <span>unpaired <code>-start</code> / <code>-end</code></span>`;
+        return;
       }
+      this._statusEl.style.display = "";
+      const parts = [];
+      if (errors.length) {
+        parts.push(
+          `<span class="rsml-error-count">✕ ${errors.length} error${errors.length === 1 ? "" : "s"}</span>`
+        );
+      }
+      if (warnings.length) {
+        parts.push(
+          `<span class="rsml-warning-count">⚠ ${warnings.length} warning${warnings.length === 1 ? "" : "s"}</span>`
+        );
+      }
+      this._statusEl.innerHTML = parts.join(`<span class="rsml-status-sep">·</span>`);
     }
 
     // Shared token walker: emits (from, to, class) tuples for every syntax
