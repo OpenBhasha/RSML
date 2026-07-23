@@ -1525,6 +1525,68 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         ".cm-scroller": { fontFamily: "inherit", lineHeight: cs.lineHeight },
         ".cm-content": { padding: `${cs.paddingTop} ${cs.paddingRight}` },
         ".cm-line": { padding: 0 },
+
+        // Autocomplete popup — mirror the pre-CM6 `.rsml-suggestions` look.
+        ".cm-tooltip.cm-tooltip-autocomplete": {
+          background: "#fff",
+          border: "1px solid #ccc",
+          borderRadius: "6px",
+          boxShadow: "0 6px 14px rgba(0,0,0,.15)",
+          overflow: "hidden",
+          fontFamily: `"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`,
+          fontSize: "0.9rem",
+          color: "#222",
+          animation: "rsmlFadeIn .12s ease-in",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul": {
+          minWidth: "160px",
+          maxWidth: "320px",
+          maxHeight: "200px",
+          overflowY: "auto",
+          padding: "4px 0",
+          margin: 0,
+          fontFamily: "inherit",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+          padding: "5px 10px",
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          lineHeight: "1.35",
+          borderRadius: 0,
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul > li:hover": {
+          background: "#0d6efd",
+          color: "#fff",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+          background: "#0d6efd",
+          color: "#fff",
+        },
+        ".cm-completionLabel": {
+          fontFamily: "inherit",
+        },
+        ".cm-completionDetail": {
+          fontStyle: "normal",
+          color: "#777",
+          fontSize: "0.85em",
+          marginLeft: "8px",
+          fontFamily: "inherit",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail, .cm-tooltip.cm-tooltip-autocomplete > ul > li:hover .cm-completionDetail": {
+          color: "rgba(255,255,255,0.85)",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul::-webkit-scrollbar": {
+          width: "6px",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul::-webkit-scrollbar-thumb": {
+          background: "#bbb",
+          borderRadius: "3px",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul::-webkit-scrollbar-thumb:hover": {
+          background: "#999",
+        },
       });
 
       const startState = state.EditorState.create({
