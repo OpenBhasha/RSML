@@ -26,7 +26,9 @@
 .rsml-content {
   white-space: pre-wrap;   /* preserves \n */
   word-break: break-word;
+  line-height: 2.1;
 }
+.rsml-content > * { line-height: inherit; }
 .rsml-suggestions {
   position: absolute; /* <--- CHANGED FROM fixed TO absolute */
   z-index: 2147483000;
@@ -164,29 +166,23 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   background-color: rgba(255, 213, 0, 0.28);
   border-radius: 3px;
 }
-/* Pitch-contour spans: no background — just a small arrow above the text. */
+/* Pitch-contour spans: inline (wraps naturally with content) with an inline
+   arrow prefix — no absolute positioning, so the arrow can never orphan
+   at the end of a line while its content wraps to the next. */
 .rsml-span.rsml-span-raising-pitch,
 .rsml-span.rsml-span-falling-pitch {
-  background: rgb(252, 122, 0, 0.1);
+  background: rgba(252, 122, 0, 0.1);
   color:#000;
   border: 1px solid rgb(252, 122, 0);
-  padding: 1px 2px;
-  position: relative;
-  display: inline-block;
+  padding: 1px 4px;
+  border-radius: 3px;
 }
-.rsml-span.rsml-span-raising-pitch::before,
+.rsml-span.rsml-span-raising-pitch::before {
+  content: "↗\\00a0"; color:#c22; font-weight: 700;
+}
 .rsml-span.rsml-span-falling-pitch::before {
-  position: absolute;
-  top: -0.65em;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.8em;
-  font-weight: 700;
-  line-height: 1;
-  pointer-events: none;
+  content: "↘\\00a0"; color:#06c; font-weight: 700;
 }
-.rsml-span.rsml-span-raising-pitch::before { content: "↗"; color:#c22; }
-.rsml-span.rsml-span-falling-pitch::before { content: "↘"; color:#06c; }
 /* Speaker: no highlight box, just a small "Speaker N" label at the turn start. */
 .rsml-speaker { background: transparent; border: none; padding: 0; border-radius: 0; }
 .rsml-speaker-label {
@@ -397,6 +393,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         if (!this.output.style.minHeight) this.output.style.minHeight = "80px";
       }
 
+      // Double-click a rendered word/tag → jump the caret to its source span.
+      this._onOutputDblclick = (e) => this._jumpToSource(e);
+      this.output.addEventListener("dblclick", this._onOutputDblclick);
+
       this.renderMode = "normalized"; // or "verbatim"
       this._toggleInjected = false;
 
@@ -456,6 +456,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       if (this._onSelectionChange) {
         document.removeEventListener("selectionchange", this._onSelectionChange);
         this._onSelectionChange = null;
+      }
+      if (this._onOutputDblclick && this.output) {
+        this.output.removeEventListener("dblclick", this._onOutputDblclick);
+        this._onOutputDblclick = null;
       }
     }
     setValue(str) {
@@ -1135,6 +1139,17 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       let out = "";
       let i = 0;
       const n = text.length;
+      let literalStart = -1;
+      const flushLiteral = (end) => {
+        if (literalStart === -1) return;
+        const chunk = text.slice(literalStart, end);
+        const esc = chunk
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        out += `<span class="rsml-lit" data-src="${literalStart}:${end}">${esc}</span>`;
+        literalStart = -1;
+      };
 
       while (i < n) {
         // Prefixed bracket form:  ! # $  + optional type + [v](n)
@@ -1147,9 +1162,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
             const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
             if (closeParen !== -1) {
+              flushLiteral(i);
               const verbatim = text.slice(openBracket + 1, closeBracket);
               const normalized = text.slice(closeBracket + 2, closeParen);
-              out += this._buildTaggedHTML(prefix, type, verbatim, normalized);
+              out += this._buildTaggedHTML(prefix, type, verbatim, normalized, i, closeParen + 1);
               i = closeParen + 1;
               continue;
             }
@@ -1162,9 +1178,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
             const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
             if (closeParen !== -1) {
+              flushLiteral(i);
               const verbatim = text.slice(i + 1, closeBracket);
               const normalized = text.slice(closeBracket + 2, closeParen);
-              out += this._buildTaggedHTML("[", "", verbatim, normalized);
+              out += this._buildTaggedHTML("[", "", verbatim, normalized, i, closeParen + 1);
               i = closeParen + 1;
               continue;
             }
@@ -1175,7 +1192,8 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         if (text[i] === "@") {
           const at = /^@([\w-]+)/.exec(text.slice(i));
           if (at) {
-            out += this._buildAtToken(at[1]);
+            flushLiteral(i);
+            out += this._buildAtToken(at[1], i, i + at[0].length);
             i += at[0].length;
             continue;
           }
@@ -1185,10 +1203,11 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         if (text[i] === "&") {
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) {
+            flushLiteral(i);
             if (sp[2] === "start") {
               const num = sp[1].slice(1);
-              out += `<span class="rsml-speaker" data-speaker="${this._esc(sp[1])}">`
-                   + `<span class="rsml-speaker-label" data-bs-toggle="tooltip" data-bs-title="speaker turn: ${this._esc(sp[1])}">Speaker ${this._esc(num)}</span> `;
+              out += `<span class="rsml-speaker" data-speaker="${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">`
+                   + `<span class="rsml-speaker-label" data-bs-toggle="tooltip" data-bs-title="speaker turn: ${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">Speaker ${this._esc(num)}</span> `;
             } else {
               out += `</span>`;
             }
@@ -1197,12 +1216,11 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           }
         }
 
-        // Literal character (escape only the HTML-sensitive ones).
-        const c = text[i];
-        out += (c === "&") ? "&amp;" : (c === "<") ? "&lt;" : (c === ">") ? "&gt;" : c;
+        // Track literal-text runs so we can wrap them in a data-src span later.
+        if (literalStart === -1) literalStart = i;
         i++;
       }
-
+      flushLiteral(i);
       return out;
     }
 
@@ -1229,9 +1247,8 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       return "span";
     }
 
-    _buildTaggedHTML(prefix, type, verbatim, normalized) {
+    _buildTaggedHTML(prefix, type, verbatim, normalized, srcStart, srcEnd) {
       const tag = this._prefixToTagName(prefix);
-      // Bracket slots are rendered as literal text — no nested tag parsing.
       const vInner = this._esc(verbatim);
       const nInner = this._esc(normalized);
 
@@ -1263,34 +1280,37 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         }
       }
 
+      const srcAttr = srcStart != null ? ` data-src="${srcStart}:${srcEnd}"` : "";
       const body = `<span class="rsml-verbatim">${vInner}</span><span class="rsml-normalized">${nInner}</span>`;
-      return `<${tag}${dataAttrs} data-bs-toggle="tooltip" data-bs-title="${this._esc(title)}">${body}</${tag}>`;
+      return `<${tag}${dataAttrs}${srcAttr} data-bs-toggle="tooltip" data-bs-title="${this._esc(title)}">${body}</${tag}>`;
     }
 
     // Isolated @tag or the opening/closing of a span pair.
-    _buildAtToken(name) {
+    _buildAtToken(name, srcStart, srcEnd) {
       if (name.endsWith("-start")) {
-        return this._openSpan(name.slice(0, -6));
+        return this._openSpan(name.slice(0, -6), srcStart, srcEnd);
       }
       if (name.endsWith("-end")) {
         return `</span>`;
       }
-      return this._buildNoiseTag(name);
+      return this._buildNoiseTag(name, srcStart, srcEnd);
     }
 
-    _openSpan(base) {
+    _openSpan(base, srcStart, srcEnd) {
       const category = this._spanCategory.get(base) || "other";
       const title = `${category}: ${base}`;
+      const srcAttr = srcStart != null ? ` data-src="${srcStart}:${srcEnd}"` : "";
       return `<span class="rsml-span rsml-span-${this._esc(base)} rsml-${this._esc(category)}"`
-           + ` data-span="${this._esc(base)}" data-category="${this._esc(category)}"`
+           + ` data-span="${this._esc(base)}" data-category="${this._esc(category)}"${srcAttr}`
            + ` data-bs-toggle="tooltip" data-bs-title="${this._esc(title)}">`;
     }
 
-    _buildNoiseTag(type) {
+    _buildNoiseTag(type, srcStart, srcEnd) {
       const category = this._atCategory.get(type) || "unknown";
       const t = this._esc(type);
+      const srcAttr = srcStart != null ? ` data-src="${srcStart}:${srcEnd}"` : "";
       return `<span class="rsml-at rsml-at-${category}"`
-           + ` data-token="@${t}" data-category="${category}"`
+           + ` data-token="@${t}" data-category="${category}"${srcAttr}`
            + ` data-bs-toggle="tooltip" data-bs-title="${category}: ${t}">@${t}</span>`;
     }
 
@@ -1318,6 +1338,31 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         }
         this.history.push(s);
         this.hIndex = this.history.length - 1;
+      }
+    }
+
+    // Walk up from the dblclick target to the nearest [data-src] element,
+    // then focus the editor and select that source range.
+    _jumpToSource(e) {
+      let el = e.target;
+      while (el && el !== this.output) {
+        if (el.nodeType === 1 && el.hasAttribute("data-src")) break;
+        el = el.parentNode;
+      }
+      if (!el || el === this.output || !el.hasAttribute || !el.hasAttribute("data-src")) return;
+      const [aStr, bStr] = el.getAttribute("data-src").split(":");
+      const start = parseInt(aStr, 10);
+      const end = parseInt(bStr, 10);
+      if (isNaN(start) || isNaN(end)) return;
+      if (this.view && this._cm && this._cm.view) {
+        this.view.focus();
+        this.view.dispatch({
+          selection: { anchor: start, head: end },
+          effects: this._cm.view.EditorView.scrollIntoView(start, { y: "center" }),
+        });
+      } else if (this.textarea) {
+        this.textarea.focus();
+        this.textarea.setSelectionRange(start, end);
       }
     }
 
