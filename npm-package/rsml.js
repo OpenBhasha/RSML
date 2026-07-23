@@ -723,6 +723,23 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       let i = 0;
       const n = text.length;
       while (i < n) {
+        // Prefix followed by `(` instead of `[` — user typed `!en(foo)` etc.
+        // Flag it before the normal prefix-`[` match so we don't drop through
+        // to per-character walking.
+        const pmParen = /^([!#$])([A-Za-z][\w-]*)?\(/.exec(text.slice(i));
+        if (pmParen) {
+          const openParen = i + pmParen[0].length - 1;
+          const closeParen = this._matchBracket(text, openParen, "(", ")");
+          const endPos = closeParen === -1 ? openParen + 1 : closeParen + 1;
+          errors.push({
+            start: i, end: endPos,
+            kind: "missing-bracket",
+            message: `Prefix \`${pmParen[1]}\` followed by \`(\` — expected \`[verbatim](normalized)\``,
+          });
+          i = endPos;
+          continue;
+        }
+
         // Prefix bracket form
         const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
         if (pm) {
@@ -846,6 +863,21 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         if (text[i] === "&") {
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) { i += sp[0].length; continue; }
+          // Conservative malformed detection: only flag when the run
+          // starts with `&s<digits>` (looks intentional as a speaker
+          // marker). Random `&M`/`&amp;` in prose stays untouched.
+          const partial = /^&s\d+[\w-]*/.exec(text.slice(i));
+          if (partial) {
+            errors.push({
+              start: i, end: i + partial[0].length,
+              kind: "malformed-speaker",
+              message:
+                `Malformed speaker: expected \`${partial[0].split("-")[0]}-start\``
+                + ` or \`${partial[0].split("-")[0]}-end\``,
+            });
+            i += partial[0].length;
+            continue;
+          }
         }
 
         i++;
