@@ -1466,37 +1466,65 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         icons: false,
       });
 
-      // ----- Wrap-selection-with-prefix handler -----
+      // ----- Wrap-selection / bracket-scaffold handler -----
       // When the user types `!`, `#`, `$`, or `[` while text is selected,
       // wrap that selection as the verbatim slot of the corresponding tag
       // and drop the caret in the right place for the next step.
+      //
+      // When the user types `[` with no selection AND the immediately
+      // preceding characters look like a fresh prefix (`!`, `#`, `$`,
+      // optionally followed by a type name — must be at line start or
+      // after whitespace so plain `[` prose isn't hijacked), the handler
+      // auto-scaffolds `[]()` and drops the caret between the brackets.
+      // This is what makes typing `![` followed by anything (or just
+      // pressing Enter) render as a code-mix without needing to pick from
+      // the popup.
       const wrapPrefixes = new Set(["!", "#", "$", "["]);
+      const bracketPrefixRe = /(^|\s)([!#$](?:[A-Za-z][\w-]*)?)$/;
       const wrapHandler = view.EditorView.inputHandler.of((v, from, to, insert) => {
         if (!wrapPrefixes.has(insert)) return false;
-        if (from === to) return false; // no selection — fall through
-        const selected = v.state.sliceDoc(from, to);
-        let scaffold, caret;
+
+        // Case 1: selection is active — wrap it as verbatim.
+        if (from !== to) {
+          const selected = v.state.sliceDoc(from, to);
+          let scaffold, caret;
+          if (insert === "[") {
+            scaffold = `[${selected}]()`;
+            caret = from + 1 + selected.length + 2; // inside `(`
+          } else {
+            scaffold = `${insert}[${selected}]()`;
+            caret = from + 1; // right after the prefix char
+          }
+          v.dispatch({
+            changes: { from, to, insert: scaffold },
+            selection: { anchor: caret },
+            userEvent: "input.type",
+          });
+          if (insert !== "[") {
+            setTimeout(() => autocomplete.startCompletion(v), 0);
+          }
+          return true;
+        }
+
+        // Case 2: typing `[` right after a bare prefix — auto-close as `]()`.
         if (insert === "[") {
-          // Bare mispronunciation: [SELECTION]()  — caret in the normalized slot.
-          scaffold = `[${selected}]()`;
-          caret = from + 1 + selected.length + 2; // just after `(`
-        } else {
-          // Prefixed form: X[SELECTION]() — caret right after X so the user
-          // can type (or pick) the type name; the scaffold-aware `apply`
-          // below will preserve the wrapped selection.
-          scaffold = `${insert}[${selected}]()`;
-          caret = from + 1; // right after the prefix char
+          const doc = v.state.doc;
+          const scanStart = Math.max(0, from - 40);
+          const before = doc.sliceString(scanStart, from);
+          if (bracketPrefixRe.test(before)) {
+            // Don't re-scaffold if a `[]()` shell already sits at the caret.
+            const after = doc.sliceString(from, Math.min(from + 3, doc.length));
+            if (after.startsWith("[")) return false;
+            v.dispatch({
+              changes: { from, to, insert: "[]()" },
+              selection: { anchor: from + 1 }, // between `[` and `]`
+              userEvent: "input.type",
+            });
+            return true;
+          }
         }
-        v.dispatch({
-          changes: { from, to, insert: scaffold },
-          selection: { anchor: caret },
-          userEvent: "input.type",
-        });
-        // Open the completion popup on the next tick so it sees the new state.
-        if (insert !== "[") {
-          setTimeout(() => autocomplete.startCompletion(v), 0);
-        }
-        return true;
+
+        return false;
       });
 
       // ----- Theme: match the textarea's Bootstrap form-control look -----
