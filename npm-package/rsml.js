@@ -29,31 +29,6 @@
   line-height: 1.9;
 }
 .rsml-content > * { line-height: inherit; }
-.rsml-suggestions {
-  position: absolute; /* <--- CHANGED FROM fixed TO absolute */
-  z-index: 2147483000;
-  background: #fff;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  box-shadow: 0 6px 14px rgba(0,0,0,.15);
-  min-width: 160px;
-  max-width: 280px;
-  max-height: 200px;
-  overflow-y: auto;
-  display: none;
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.9rem;
-  color: #222;
-  padding: 4px 0;
-  animation: rsmlFadeIn .12s ease-in;
-  pointer-events: auto;
-}
-.rsml-suggestions::-webkit-scrollbar { width: 6px; }
-.rsml-suggestions::-webkit-scrollbar-thumb { background: #bbb; border-radius: 3px; }
-.rsml-suggestions::-webkit-scrollbar-thumb:hover { background: #999; }
-.rsml-suggestion-item { padding: 5px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rsml-suggestion-item:hover, .rsml-suggestion-item.active { background:#0d6efd; color:#fff; }
-
 @keyframes rsmlFadeIn { from { opacity:0; transform: translateY(-3px);} to { opacity:1; transform:none;} }
 
 code-mix, accent, mispronunciation, entity,
@@ -176,6 +151,32 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   background-color: rgba(255, 213, 0, 0.28);
   border-radius: 3px;
 }
+/* Editor-side error / warning indicators.
+   Errors (structural — orphan, unclosed bracket): red wavy underline.
+   Warnings (semantic — unknown type / lang / @-tag): amber wavy underline. */
+.tok-orphan, .tok-error {
+  text-decoration: underline wavy #dc3545;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.tok-warning {
+  text-decoration: underline wavy #f0ad4e;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+/* Status bar under the editor. */
+.rsml-editor-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 0.8em;
+  color: #6c757d;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+.rsml-editor-status .rsml-error-count { color: #dc3545; font-weight: 600; }
+.rsml-editor-status .rsml-warning-count { color: #d68910; font-weight: 600; }
+.rsml-editor-status .rsml-status-sep { color: #adb5bd; }
 /* Pitch-contour spans: inline (wraps naturally with content) with an inline
    arrow prefix — no absolute positioning, so the arrow can never orphan
    at the end of a line while its content wraps to the next. */
@@ -214,6 +215,19 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   text-transform: uppercase;
 }
 .rsml-span-orphan { outline:1px dashed #d33; }
+/* Unpaired @X-start / @X-end / &sN-start / &sN-end — a visible red-dashed
+   chip in the render pane so annotators can spot broken pairs. */
+.rsml-orphan {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(220, 53, 69, 0.08);
+  border: 1px dashed #dc3545;
+  color: #a01818;
+  font-weight: 600;
+  font-size: 0.9em;
+}
+.rsml-orphan::before { content: "⚠ "; }
 /* Verbatim / normalized layer switch — nested tags inherit the mode via CSS. */
 .rsml-content .rsml-verbatim,
 .rsml-content .rsml-normalized { display: inline; }
@@ -236,34 +250,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   }
 
   // Get pixel coords for caret in a textarea
-  function getCaretCoordinates(el, position) {
-    const div = document.createElement("div");
-    const style = getComputedStyle(el);
-    for (const prop of style) div.style[prop] = style[prop];
-
-    div.style.position = "absolute";
-    div.style.visibility = "hidden";
-    div.style.whiteSpace = "pre-wrap";
-    div.style.wordWrap = "break-word";
-    div.style.overflow = "auto";
-    div.style.height = el.offsetHeight + "px";
-    div.style.width = el.offsetWidth + "px";
-
-    const span = document.createElement("span");
-    const text = el.value.substring(0, position);
-    const remainder = el.value.substring(position) || ".";
-    div.textContent = text;
-    span.textContent = remainder;
-    div.appendChild(span);
-    document.body.appendChild(div);
-
-    const top = span.offsetTop - el.scrollTop;
-    const left = span.offsetLeft - el.scrollLeft;
-    document.body.removeChild(div);
-
-    return { top, left };
-  }
-
   // Optional Bootstrap tooltip activation — no-op if Bootstrap not present.
   function activateTooltips(rootEl) {
     if (!rootEl) return;
@@ -344,7 +330,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
      * @param {Array<string>} [opts.tags]
      * @param {Object} [opts.entities]
      * @param {Object} [opts.languages]
-     * @param {boolean} [opts.enableUndoRedo=true]
      * @param {boolean} [opts.demoText=false]
      */
     constructor(opts) {
@@ -361,7 +346,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           prosodySpans: DEFAULT_PROSODY_SPANS.slice(),
           entities: Object.assign({}, DEFAULT_ENTITY_MAP),
           languages: Object.assign({}, DEFAULT_LANGS),
-          enableUndoRedo: true,
           demoText: false,
         },
         opts || {}
@@ -415,30 +399,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       this.renderMode = "normalized"; // or "verbatim"
       this._toggleInjected = false;
 
-      // --- Suggestion state ---
-      this.suggestionsBox = document.createElement("div");
-      this.suggestionsBox.className = "rsml-suggestions";
-      document.body.appendChild(this.suggestionsBox);
-
-      this.currentTrigger = "";
-      this.selectedIndex = -1;
-      this.currentSuggestions = [];
-
-      // --- Undo/Redo state ---
-      this.isApplyingHistory = false;
-      this.history = [this._snapshot()];
-      this.hIndex = 0;
-
-      // --- Bindings ---
+      // Textarea `input` is the fallback path: if CodeMirror never mounts
+      // the render pane still updates as the user types.
       this._onInput = this._onInput.bind(this);
-      this._onKeydown = this._onKeydown.bind(this);
-      this._onScrollOrResize = this._onScrollOrResize.bind(this);
-
-      // --- Wire up ---
       this.textarea.addEventListener("input", this._onInput);
-      this.textarea.addEventListener("keydown", this._onKeydown);
-      window.addEventListener("scroll", this._onScrollOrResize, true);
-      window.addEventListener("resize", this._onScrollOrResize);
 
       // Initial render/demo
       if (this.opts.demoText) {
@@ -458,19 +422,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     // ---------- Public API ----------
     destroy() {
       this.textarea.removeEventListener("input", this._onInput);
-      this.textarea.removeEventListener("keydown", this._onKeydown);
-      window.removeEventListener("scroll", this._onScrollOrResize, true);
-      window.removeEventListener("resize", this._onScrollOrResize);
-      if (this.suggestionsBox && this.suggestionsBox.parentNode) {
-        this.suggestionsBox.parentNode.removeChild(this.suggestionsBox);
-      }
-      if (this._hlResizeObserver) {
-        this._hlResizeObserver.disconnect();
-        this._hlResizeObserver = null;
-      }
-      if (this._onSelectionChange) {
-        document.removeEventListener("selectionchange", this._onSelectionChange);
-        this._onSelectionChange = null;
+      if (this.view) { this.view.destroy(); this.view = null; }
+      if (this._statusEl && this._statusEl.parentNode) {
+        this._statusEl.parentNode.removeChild(this._statusEl);
+        this._statusEl = null;
       }
       if (this._onOutputDblclick && this.output) {
         this.output.removeEventListener("dblclick", this._onOutputDblclick);
@@ -478,329 +433,30 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       }
     }
     setValue(str) {
-      this.textarea.value = str || "";
-      this._recordState();
+      const value = str || "";
+      this.textarea.value = value;
+      if (this.view && this._cm) {
+        this.view.dispatch({
+          changes: { from: 0, to: this.view.state.doc.length, insert: value },
+        });
+      }
       this._render();
     }
     getValue() {
       return this.textarea.value;
     }
     undo() {
-      if (!this.opts.enableUndoRedo) return;
-      if (this.hIndex > 0) {
-        this.isApplyingHistory = true;
-        this.hIndex--;
-        this._applySnapshot(this.history[this.hIndex]);
-        this.isApplyingHistory = false;
-        this._render();
-      }
+      if (this.view && this._cm) return this._cm.commands.undo(this.view);
     }
     redo() {
-      if (!this.opts.enableUndoRedo) return;
-      if (this.hIndex < this.history.length - 1) {
-        this.isApplyingHistory = true;
-        this.hIndex++;
-        this._applySnapshot(this.history[this.hIndex]);
-        this.isApplyingHistory = false;
-        this._render();
-      }
+      if (this.view && this._cm) return this._cm.commands.redo(this.view);
     }
 
     // ---------- Internal: Events ----------
     _onInput() {
+      // Fallback path used only when CodeMirror hasn't mounted; the
+      // CM updateListener drives re-render directly otherwise.
       this._render();
-      if (this.opts.enableUndoRedo) this._recordState();
-      this._handleTriggers();
-    }
-    _onKeydown(e) {
-      const start = this.textarea.selectionStart;
-      const end = this.textarea.selectionEnd;
-      const selectedText = this.textarea.value.slice(start, end);
-
-      // Insert entity scaffold with '#'  -> #[verbatim](normalized)
-      if (e.key === "#") {
-        e.preventDefault();
-        const insert = selectedText ? `#[${selectedText}]()` : `#[]()`;
-        this.textarea.setRangeText(insert, start, end, "end");
-        this.textarea.setSelectionRange(start + 1, start + 1);
-        this.currentTrigger = "#";
-        this._showSuggestions(
-          Object.keys(this.opts.entities).map(
-            (k) => `${k} (${this.opts.entities[k]})`
-          )
-        );
-        return;
-      }
-
-      // Insert code-mix scaffold with '!'  -> !lang[verbatim](normalized)
-      if (e.key === "!") {
-        e.preventDefault();
-        const insert = selectedText ? `![${selectedText}]()` : `![]()`;
-        this.textarea.setRangeText(insert, start, end, "end");
-        this.textarea.setSelectionRange(start + 1, start + 1);
-        this.currentTrigger = "!";
-        this._showSuggestions(
-          Object.keys(this.opts.languages).map(
-            (c) => `${c} (${this.opts.languages[c]})`
-          )
-        );
-        return;
-      }
-
-      // Insert accent scaffold with '$'  -> $accent-name[verbatim](normalized)
-      if (e.key === "$") {
-        e.preventDefault();
-        const insert = selectedText ? `$[${selectedText}]()` : `$[]()`;
-        this.textarea.setRangeText(insert, start, end, "end");
-        this.textarea.setSelectionRange(start + 1, start + 1);
-        this.currentTrigger = "$";
-        return;
-      }
-
-      // Speaker span with '&'  -> shows sN-start / sN-end suggestions.
-      if (e.key === "&") {
-        e.preventDefault();
-        this.textarea.setRangeText("&", start, end, "end");
-        this.textarea.setSelectionRange(start + 1, start + 1);
-        this.currentTrigger = "&";
-        this._showSuggestions(this._buildSpeakerSuggestions(""));
-        return;
-      }
-
-      // Suggestion navigation
-      if (this.suggestionsBox.style.display !== "none") {
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          this.selectedIndex =
-            (this.selectedIndex + 1) % this.currentSuggestions.length;
-          this._updateSelection();
-          return;
-        }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          this.selectedIndex =
-            (this.selectedIndex - 1 + this.currentSuggestions.length) %
-            this.currentSuggestions.length;
-          this._updateSelection();
-          return;
-        }
-        if (
-          e.key === "Enter" ||
-          (e.key === "Tab" && this.selectedIndex >= 0)
-        ) {
-          e.preventDefault();
-          this._insertTag(this.currentSuggestions[this.selectedIndex]);
-          return;
-        }
-        if (e.key === "Escape") {
-          this._hideSuggestions();
-          return;
-        }
-      }
-
-      // Bracket wrapping shortcuts
-      //   `[` -> [selection](  )   (bare mispronunciation scaffold)
-      //   `(` -> (selection)
-      if (["[", "("].includes(e.key)) {
-        e.preventDefault();
-        let wrapInsert = "", cursorOffset;
-        if (e.key === "[") {
-          wrapInsert = selectedText ? `[${selectedText}]()` : `[]()`;
-          cursorOffset = start + (selectedText ? selectedText.length + 3 : 1);
-        } else {
-          wrapInsert = selectedText ? `(${selectedText})` : `()`;
-          cursorOffset = start + (selectedText ? selectedText.length + 2 : 1);
-        }
-        this.textarea.setRangeText(wrapInsert, start, end, "end");
-        this.textarea.setSelectionRange(cursorOffset, cursorOffset);
-        this.textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
-        return;
-      }
-
-      // Undo/Redo keyboard shortcuts
-      if (this.opts.enableUndoRedo) {
-        const isMod = e.metaKey || e.ctrlKey;
-        if (isMod && e.key.toLowerCase() === "z" && !e.shiftKey) {
-          e.preventDefault();
-          this.undo();
-          return;
-        }
-        const isRedoKey = e.key.toLowerCase() === "y";
-        const isRedoShiftZ = e.shiftKey && e.key.toLowerCase() === "z";
-        if (isMod && (isRedoKey || isRedoShiftZ)) {
-          e.preventDefault();
-          this.redo();
-          return;
-        }
-      }
-    }
-    _onScrollOrResize() {
-      if (this.suggestionsBox.style.display !== "none") {
-        this._positionBoxAtCaret();
-      }
-    }
-
-    // ---------- Internal: Suggestions ----------
-    _handleTriggers() {
-      const cursorPos = this.textarea.selectionStart;
-      const before = this.textarea.value.slice(0, cursorPos);
-
-      const matchAt = before.match(/@[\w-]*$/);
-      const matchHash = before.match(/#[A-Za-z_]*$/);
-      const matchBang = before.match(/![A-Za-z_]*$/);
-      const matchAmp = before.match(/&[\w-]*$/);
-
-      if (matchAmp) {
-        this.currentTrigger = "&";
-        this._showSuggestions(this._buildSpeakerSuggestions(matchAmp[0].substring(1)));
-        return;
-      }
-      if (matchAt) {
-        this.currentTrigger = "@";
-        const query = matchAt[0];
-        const filtered = this.opts.tags.filter((t) => t.startsWith(query));
-        this._showSuggestions(filtered.length ? filtered : this.opts.tags);
-        return;
-      }
-      if (matchHash) {
-        this.currentTrigger = "#";
-        const q = matchHash[0].substring(1).toUpperCase();
-        const keys = Object.keys(this.opts.entities);
-        const filtered = keys.filter((k) => k.startsWith(q));
-        this._showSuggestions(filtered.map((k) => `${k} (${this.opts.entities[k]})`));
-        return;
-      }
-      if (matchBang) {
-        this.currentTrigger = "!";
-        const q = matchBang[0].substring(1).toLowerCase();
-        const codes = Object.keys(this.opts.languages);
-        const filtered = codes.filter((c) => c.startsWith(q));
-        this._showSuggestions(filtered.map((c) => `${c} (${this.opts.languages[c]})`));
-        return;
-      }
-      this._hideSuggestions();
-    }
-
-    _showSuggestions(list) {
-      // Clear previous suggestions
-      this.suggestionsBox.innerHTML = "";
-      this.currentSuggestions = list.slice();
-      this.selectedIndex = list.length ? 0 : -1;
-    
-      // Hide if empty
-      if (!list.length || !this.textarea || !document.body.contains(this.textarea)) {
-        return this._hideSuggestions();
-      }
-    
-      // Populate suggestion items
-      list.forEach((item, i) => {
-        const div = document.createElement("div");
-        div.className = "rsml-suggestion-item";
-        if (i === 0) div.classList.add("active");
-        div.textContent = item;
-    
-        // Handle click (mousedown preferred to prevent blur)
-        div.addEventListener("mousedown", (e) => {
-          e.preventDefault(); // prevent blur
-          this._insertTag(item);
-        });
-    
-        this.suggestionsBox.appendChild(div);
-      });
-    
-      // --- FIX START ---
-      // 1. Make it part of the layout so it has dimensions for calculation
-      this.suggestionsBox.style.display = "block";
-      this.suggestionsBox.style.visibility = "hidden"; 
-    
-      // 2. Position at caret (Now it can safely measure width/height for boundary checks)
-      try {
-        this._positionBoxAtCaret();
-      } catch (err) {
-        console.warn("Caret positioning failed:", err);
-        // If positioning fails, hide it again to prevent a broken UI
-        this.suggestionsBox.style.display = "none";
-        this.suggestionsBox.style.visibility = "visible";
-        return this._hideSuggestions(); 
-      }
-    
-      // 3. Make it visible to the user
-      this.suggestionsBox.style.visibility = "visible";
-      // --- FIX END ---
-    }
-
-    _updateSelection() {
-      const items = Array.from(this.suggestionsBox.children);
-      items.forEach((el, i) => {
-        el.classList.toggle("active", i === this.selectedIndex);
-        if (i === this.selectedIndex)
-          el.scrollIntoView({ block: "nearest" });
-      });
-    }
-
-    _hideSuggestions() {
-      this.suggestionsBox.innerHTML = "";
-      this.suggestionsBox.style.display = "none";
-      this.selectedIndex = -1;
-      this.currentSuggestions = [];
-    }
-
-    _positionBoxAtCaret() {
-      const coords = getCaretCoordinates(this.textarea, this.textarea.selectionStart);
-      const rect = this.textarea.getBoundingClientRect();
-      this.suggestionsBox.style.left = `${coords.left + rect.left + window.scrollX}px`;
-      this.suggestionsBox.style.top = `${coords.top + rect.top + 24 + window.scrollY}px`;
-    }
-
-    _insertTag(raw) {
-      const tagOnly = raw.includes("(") ? raw.split(" ")[0] : raw;
-      const cursorPos = this.textarea.selectionStart;
-      const value = this.textarea.value;
-
-      // Insert the type name between a prefix char and the following '['.
-      const prefixInsert = (prefixChar) => {
-        const iPre = value.lastIndexOf(prefixChar, cursorPos);
-        const iBr = value.indexOf("[", iPre);
-        if (iPre === -1 || iBr <= iPre) return false;
-        const before = value.slice(0, iPre + 1);
-        const after = value.slice(iBr);
-        const newText = `${before}${tagOnly}${after}`;
-        this.textarea.value = newText;
-        const caret = newText.indexOf("()", iBr) + 1;
-        this.textarea.setSelectionRange(caret, caret);
-        this._hideSuggestions();
-        this.textarea.focus();
-        this._render();
-        if (this.opts.enableUndoRedo) this._recordState();
-        return true;
-      };
-
-      if (this.currentTrigger === "#" && prefixInsert("#")) return;
-      if (this.currentTrigger === "!" && prefixInsert("!")) return;
-
-      if (this.currentTrigger === "@") {
-        const start =
-          cursorPos -
-          (value.slice(0, cursorPos).match(/@[\w-]*$/)?.[0].length || 1);
-        this.textarea.setRangeText(tagOnly + " ", start, cursorPos, "end");
-        const newPos = start + tagOnly.length + 1;
-        this.textarea.setSelectionRange(newPos, newPos);
-        this._hideSuggestions();
-        this.textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
-        return;
-      }
-
-      if (this.currentTrigger === "&") {
-        const start =
-          cursorPos -
-          (value.slice(0, cursorPos).match(/&[\w-]*$/)?.[0].length || 1);
-        const insert = `&${tagOnly} `;
-        this.textarea.setRangeText(insert, start, cursorPos, "end");
-        const newPos = start + insert.length;
-        this.textarea.setSelectionRange(newPos, newPos);
-        this._hideSuggestions();
-        this.textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
-      }
     }
 
     // Build the &-trigger suggestion list. Every speaker that already appears
@@ -881,253 +537,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       content.innerHTML = html;
       this.output.appendChild(content);
 
-      this._paintHighlight();
       requestAnimationFrame(() => activateTooltips(this.output));
-    }
-
-    /* =========================
-       Source Highlight Overlay
-    ========================= */
-    _installHighlightOverlay() {
-      if (this._hlInstalled) return;
-      this._hlInstalled = true;
-
-      const ta = this.textarea;
-      const container = document.createElement("div");
-      container.className = "rsml-hl-container";
-      ta.parentNode.insertBefore(container, ta);
-      container.appendChild(ta);
-
-      const highlights = document.createElement("div");
-      highlights.className = "rsml-hl-highlights";
-      highlights.setAttribute("aria-hidden", "true");
-      const content = document.createElement("div");
-      content.className = "rsml-hl-content";
-      highlights.appendChild(content);
-      container.insertBefore(highlights, ta);
-
-      this._hlContainer = container;
-      this._hlHighlights = highlights;
-      this._hlContent = content;
-      ta.classList.add("rsml-hl-textarea");
-
-      ta.addEventListener("scroll", () => this._syncHighlightScroll());
-
-      // Caret-position tracking. `selectionStart` isn't reliably updated by
-      // the time `click` / `keyup` fire, so listen to `selectionchange`
-      // (which fires AFTER the caret has actually moved) as the primary
-      // signal, and defer the pointer/keyboard fallbacks to the next frame.
-      this._onSelectionChange = () => {
-        if (document.activeElement === ta) this._updateMatchHighlight();
-      };
-      document.addEventListener("selectionchange", this._onSelectionChange);
-      const deferred = () => requestAnimationFrame(() => this._updateMatchHighlight());
-      ta.addEventListener("click", deferred);
-      ta.addEventListener("keyup", deferred);
-      ta.addEventListener("focus", deferred);
-      ta.addEventListener("blur", () => this._clearMatchHighlight());
-
-      if (typeof ResizeObserver !== "undefined") {
-        this._hlResizeObserver = new ResizeObserver(() => this._syncHighlightStyles());
-        this._hlResizeObserver.observe(ta);
-      }
-
-      this._syncHighlightStyles();
-    }
-
-    _syncHighlightStyles() {
-      if (!this._hlHighlights) return;
-      const cs = getComputedStyle(this.textarea);
-      const hl = this._hlHighlights;
-      const props = [
-        // Font metrics
-        "fontFamily","fontSize","fontWeight","fontStyle",
-        "fontVariant","fontStretch","fontOpticalSizing",
-        "fontKerning","fontFeatureSettings","fontVariationSettings",
-        "fontVariantLigatures","fontVariantNumeric","fontVariantCaps",
-        "fontVariantEastAsian","fontSynthesis",
-        // Text metrics
-        "lineHeight","letterSpacing","wordSpacing","tabSize",
-        "textIndent","textTransform","textAlign","textRendering",
-        "direction","unicodeBidi","writingMode",
-        // Layout
-        "boxSizing",
-        "paddingTop","paddingRight","paddingBottom","paddingLeft",
-        "borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth",
-        "borderTopStyle","borderRightStyle","borderBottomStyle","borderLeftStyle",
-        "borderTopLeftRadius","borderTopRightRadius",
-        "borderBottomLeftRadius","borderBottomRightRadius",
-      ];
-      for (const p of props) {
-        const v = cs[p];
-        if (v !== undefined && v !== "") hl.style[p] = v;
-      }
-      // Border must not paint (backdrop is behind the textarea's border already).
-      hl.style.borderColor = "transparent";
-    }
-
-    _syncHighlightScroll() {
-      if (!this._hlContent) return;
-      const ta = this.textarea;
-      this._hlContent.style.transform =
-        `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
-    }
-
-    _paintHighlight() {
-      if (!this._hlContent) return;
-      this._hlContent.innerHTML = this._highlightSource(this.textarea.value || "");
-      this._syncHighlightScroll();
-      this._updateMatchHighlight();
-    }
-
-    // Character-preserving tokenizer. Only the SYNTAX gets a color; lexical
-    // content (verbatim/normalized slots and plain text) stays default.
-    // Every syntax fragment carries a `data-group` attribute so all fragments
-    // belonging to the same tag (bracket-form opener/mid/closer, or a
-    // -start/-end pair) can be co-highlighted when the caret lands on one.
-    _highlightSource(text) {
-      let out = "";
-      let i = 0;
-      const n = text.length;
-      const esc = (s) => this._esc(s);
-
-      // Reset per-render range table: maps a source-character range to the
-      // group id shared by every syntax fragment of that tag.
-      this._synRanges = [];
-      const startCount = new Map();
-      const endCount = new Map();
-      let bracketCounter = 0;
-      const record = (start, end, group) => {
-        this._synRanges.push({ start, end, group });
-      };
-      const pairGroup = (name, role) => {
-        const map = role === "start" ? startCount : endCount;
-        const idx = map.get(name) || 0;
-        map.set(name, idx + 1);
-        return `p:${name}:${idx}`;
-      };
-
-      while (i < n) {
-        // Prefixed bracket form:  ! # $  + optional type + [v](n)
-        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
-        if (pm) {
-          const prefix = pm[1];
-          const openBracket = i + pm[0].length - 1;
-          const closeBracket = this._matchBracket(text, openBracket, "[", "]");
-          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
-            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
-            if (closeParen !== -1) {
-              const cat = prefix === "!" ? "code-mix"
-                        : prefix === "#" ? "entity"
-                        : "accent";
-              const g = `b${bracketCounter++}`;
-              const head = text.slice(i, openBracket + 1);          // "!en["
-              const verbatim = text.slice(openBracket + 1, closeBracket);
-              const normalized = text.slice(closeBracket + 2, closeParen);
-              record(i, openBracket + 1, g);
-              record(closeBracket, closeBracket + 2, g);
-              record(closeParen, closeParen + 1, g);
-              out += `<span class="tok-${cat}" data-group="${g}">${esc(head)}</span>`;
-              out += esc(verbatim);
-              out += `<span class="tok-${cat}" data-group="${g}">${esc("](")}</span>`;
-              out += esc(normalized);
-              out += `<span class="tok-${cat}" data-group="${g}">${esc(")")}</span>`;
-              i = closeParen + 1;
-              continue;
-            }
-          }
-        }
-
-        // Bare mispronunciation:  [v](n)
-        if (text[i] === "[") {
-          const closeBracket = this._matchBracket(text, i, "[", "]");
-          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
-            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
-            if (closeParen !== -1) {
-              const g = `b${bracketCounter++}`;
-              const verbatim = text.slice(i + 1, closeBracket);
-              const normalized = text.slice(closeBracket + 2, closeParen);
-              record(i, i + 1, g);
-              record(closeBracket, closeBracket + 2, g);
-              record(closeParen, closeParen + 1, g);
-              out += `<span class="tok-mispronunciation" data-group="${g}">${esc("[")}</span>`;
-              out += esc(verbatim);
-              out += `<span class="tok-mispronunciation" data-group="${g}">${esc("](")}</span>`;
-              out += esc(normalized);
-              out += `<span class="tok-mispronunciation" data-group="${g}">${esc(")")}</span>`;
-              i = closeParen + 1;
-              continue;
-            }
-          }
-        }
-
-        // @tag / @name-start / @name-end
-        if (text[i] === "@") {
-          const at = /^@([\w-]+)/.exec(text.slice(i));
-          if (at) {
-            const name = at[1];
-            const isStart = name.endsWith("-start");
-            const isEnd = !isStart && name.endsWith("-end");
-            let cls, dataAttrs = "";
-            if (isStart || isEnd) {
-              const base = name.slice(0, isStart ? -6 : -4);
-              const cat = this._spanCategory.get(base) || "unknown";
-              cls = `tok-span-${cat}`;
-              const g = pairGroup(base, isStart ? "start" : "end");
-              record(i, i + at[0].length, g);
-              dataAttrs = ` data-group="${g}"`;
-            } else {
-              const cat = this._atCategory.get(name) || "unknown";
-              cls = `tok-at-${cat}`;
-            }
-            out += `<span class="${cls}"${dataAttrs}>${esc(at[0])}</span>`;
-            i += at[0].length;
-            continue;
-          }
-        }
-
-        // Speaker span: &sN-start / &sN-end
-        if (text[i] === "&") {
-          const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
-          if (sp) {
-            const g = pairGroup(sp[1], sp[2]);
-            record(i, i + sp[0].length, g);
-            out += `<span class="tok-span-speaker" data-group="${g}">`
-                 + `${esc(sp[0])}</span>`;
-            i += sp[0].length;
-            continue;
-          }
-        }
-
-        // Literal character.
-        const c = text[i];
-        out += (c === "&") ? "&amp;" : (c === "<") ? "&lt;" : (c === ">") ? "&gt;" : c;
-        i++;
-      }
-
-      // Trailing newline: textareas render an empty final line after '\n',
-      // pre-wrap doesn't unless we add a sentinel.
-      if (text.endsWith("\n")) out += " ";
-      return out;
-    }
-
-    _updateMatchHighlight() {
-      if (!this._hlContent) return;
-      this._clearMatchHighlight();
-      if (!this._synRanges || !this._synRanges.length) return;
-      const pos = this.textarea.selectionStart;
-      const hit = this._synRanges.find((r) => pos >= r.start && pos <= r.end);
-      if (!hit) return;
-      this._hlContent
-        .querySelectorAll(`[data-group="${CSS.escape(hit.group)}"]`)
-        .forEach((el) => el.classList.add("tok-match"));
-    }
-
-    _clearMatchHighlight() {
-      if (!this._hlContent) return;
-      this._hlContent
-        .querySelectorAll(".tok-match")
-        .forEach((el) => el.classList.remove("tok-match"));
     }
 
     /* =========================
@@ -1155,6 +565,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       let i = 0;
       const n = text.length;
       let literalStart = -1;
+      const orphans = this._findOrphans(text);
       const flushLiteral = (end) => {
         if (literalStart === -1) return;
         const chunk = text.slice(literalStart, end);
@@ -1212,7 +623,11 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           const at = /^@([\w-]+)/.exec(text.slice(i));
           if (at) {
             flushLiteral(i);
-            out += this._buildAtToken(at[1], i, i + at[0].length);
+            if (orphans.has(i)) {
+              out += this._buildOrphanChip(at[0], i, i + at[0].length);
+            } else {
+              out += this._buildAtToken(at[1], i, i + at[0].length);
+            }
             i += at[0].length;
             continue;
           }
@@ -1223,7 +638,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) {
             flushLiteral(i);
-            if (sp[2] === "start") {
+            if (orphans.has(i)) {
+              out += this._buildOrphanChip(sp[0], i, i + sp[0].length);
+            } else if (sp[2] === "start") {
               const num = sp[1].slice(1);
               out += `<span class="rsml-speaker" data-speaker="${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">`
                    + `<span class="rsml-speaker-label" data-bs-toggle="tooltip" data-bs-title="speaker turn: ${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">Speaker ${this._esc(num)}:</span>`;
@@ -1241,6 +658,360 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       }
       flushLiteral(i);
       return out;
+    }
+
+    // Returns a Set of source positions for every `@X-start`, `@X-end`,
+    // `&sN-start`, `&sN-end` token that has no matching sibling. Pairs are
+    // matched name-by-name with LIFO stacks — the first `-start` of a given
+    // base pairs with the first `-end` of the same base, etc. Anything left
+    // in a stack after the scan (or a `-end` that hits an empty stack) is
+    // reported as an orphan.
+    _findOrphans(text) {
+      const orphans = new Set();
+      const stacks = new Map();
+      const re = /@([\w-]+?)(-start|-end)(?![\w-])|&(s\d+)-(start|end)(?![\w-])/g;
+      let m;
+      while ((m = re.exec(text))) {
+        const name = m[1] || m[3];
+        const role = m[2] ? m[2].slice(1) : m[4];
+        const pos = m.index;
+        if (role === "start") {
+          if (!stacks.has(name)) stacks.set(name, []);
+          stacks.get(name).push(pos);
+        } else {
+          const stk = stacks.get(name);
+          if (stk && stk.length) stk.pop();
+          else orphans.add(pos);
+        }
+      }
+      for (const positions of stacks.values()) {
+        for (const p of positions) orphans.add(p);
+      }
+      return orphans;
+    }
+
+    // Full validation pass. Returns:
+    //   { errors:   [{ start, end, kind, message }, ...],   // structural
+    //     warnings: [{ start, end, kind, message }, ...] }  // semantic
+    //
+    // Errors: orphan -start/-end, unclosed `[`, unclosed `(`, `]` not
+    // followed by `(` after a prefix.
+    // Warnings: unknown entity type (#XYZ), unknown language code (!xy),
+    // unknown @-tag (@foo, @bar-start with no such span, …).
+    _findIssues(text) {
+      const errors = [];
+      const warnings = [];
+      const seenOrphan = new Set();
+
+      // 1) Orphan -start / -end (reuse the existing detector).
+      for (const pos of this._findOrphans(text)) {
+        seenOrphan.add(pos);
+        const rest = text.slice(pos);
+        const m = /^@[\w-]+|^&s\d+-(?:start|end)/.exec(rest);
+        if (!m) continue;
+        const token = m[0];
+        const role = token.endsWith("-start") ? "start" : "end";
+        const missing = role === "start" ? "-end" : "-start";
+        errors.push({
+          start: pos, end: pos + token.length,
+          kind: "orphan",
+          message: `Unpaired ${role}: no matching ${missing}`,
+        });
+      }
+
+      // 2) Structural + unknown-type walk.
+      let i = 0;
+      const n = text.length;
+      while (i < n) {
+        // Prefix immediately followed by a close bracket — always malformed
+        // (`!)`, `#]`, `$}`, etc). No legitimate use.
+        const pmClose = /^([!#$])[\])}]/.exec(text.slice(i));
+        if (pmClose) {
+          errors.push({
+            start: i, end: i + 2,
+            kind: "stray-bracket",
+            message: `Stray \`${pmClose[0]}\` — a prefix must be followed by \`[verbatim](normalized)\``,
+          });
+          i += 2;
+          continue;
+        }
+
+        // Prefix followed by `(` instead of `[` — user typed `!en(foo)` etc.
+        // Flag it before the normal prefix-`[` match so we don't drop through
+        // to per-character walking.
+        const pmParen = /^([!#$])([A-Za-z][\w-]*)?\(/.exec(text.slice(i));
+        if (pmParen) {
+          const openParen = i + pmParen[0].length - 1;
+          const closeParen = this._matchBracket(text, openParen, "(", ")");
+          const endPos = closeParen === -1 ? openParen + 1 : closeParen + 1;
+          errors.push({
+            start: i, end: endPos,
+            kind: "missing-bracket",
+            message: `Prefix \`${pmParen[1]}\` followed by \`(\` — expected \`[verbatim](normalized)\``,
+          });
+          i = endPos;
+          continue;
+        }
+
+        // Prefix bracket form
+        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        if (pm) {
+          const prefix = pm[1];
+          const type = pm[2] || "";
+          const openBracket = i + pm[0].length - 1;
+          const closeBracket = this._matchBracket(text, openBracket, "[", "]");
+          if (closeBracket === -1) {
+            errors.push({
+              start: i, end: openBracket + 1,
+              kind: "unclosed-bracket",
+              message: "Unclosed `[` — expected matching `]`",
+            });
+            i = openBracket + 1;
+            continue;
+          }
+          if (text[closeBracket + 1] !== "(") {
+            errors.push({
+              start: closeBracket, end: closeBracket + 1,
+              kind: "missing-paren",
+              message: "Expected `(` after `]`",
+            });
+            i = closeBracket + 1;
+            continue;
+          }
+          const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+          if (closeParen === -1) {
+            errors.push({
+              start: closeBracket + 1, end: closeBracket + 2,
+              kind: "unclosed-paren",
+              message: "Unclosed `(`",
+            });
+            i = closeBracket + 2;
+            continue;
+          }
+          // Verbatim uses the same prose rules as the outer text — specials
+          // are only allowed inside the normalized slot.
+          this._flagProseSlice(text, openBracket + 1, closeBracket, errors);
+          // Nested tag inside normalized (an inner `](` gives it away).
+          if (text.slice(closeBracket + 2, closeParen).includes("](")) {
+            errors.push({
+              start: i, end: closeParen + 1,
+              kind: "nested-tag",
+              message: "Nested tag inside `(normalized)`",
+            });
+          }
+          // Warn on unknown type / lang (only if the user actually typed one).
+          if (type) {
+            if (prefix === "#" && !this.opts.entities[type]) {
+              warnings.push({
+                start: i + 1, end: i + 1 + type.length,
+                kind: "unknown-entity",
+                message: `Unknown entity type: \`#${type}\``,
+              });
+            } else if (prefix === "!" && !this.opts.languages[type.toLowerCase()]) {
+              warnings.push({
+                start: i + 1, end: i + 1 + type.length,
+                kind: "unknown-language",
+                message: `Unknown language code: \`!${type}\``,
+              });
+            }
+            // $ accents are free-form; no warning.
+          }
+          i = closeParen + 1;
+          continue;
+        }
+
+        // Bare `[…](…)` — plain brackets aren't prose either, so flag any
+        // `[` that doesn't form a valid mispronunciation tag.
+        if (text[i] === "[") {
+          const closeBracket = this._matchBracket(text, i, "[", "]");
+          if (closeBracket === -1) {
+            errors.push({
+              start: i, end: i + 1,
+              kind: "stray-char",
+              message: "Stray `[`",
+            });
+            i++;
+            continue;
+          }
+          if (text[closeBracket + 1] !== "(") {
+            // `[X]` not followed by `(` — brackets in prose are still stray.
+            errors.push({ start: i, end: i + 1, kind: "stray-char", message: "Stray `[`" });
+            errors.push({ start: closeBracket, end: closeBracket + 1, kind: "stray-char", message: "Stray `]`" });
+            this._flagProseSlice(text, i + 1, closeBracket, errors);
+            i = closeBracket + 1;
+            continue;
+          }
+          const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+          if (closeParen === -1) {
+            errors.push({
+              start: closeBracket + 1, end: closeBracket + 2,
+              kind: "unclosed-paren",
+              message: "Unclosed `(`",
+            });
+            i = closeBracket + 2;
+            continue;
+          }
+          // Valid `[v](n)` — flag prose issues in verbatim; look for nested
+          // tag shapes in normalized.
+          this._flagProseSlice(text, i + 1, closeBracket, errors);
+          if (text.slice(closeBracket + 2, closeParen).includes("](")) {
+            errors.push({
+              start: i, end: closeParen + 1,
+              kind: "nested-tag",
+              message: "Nested tag inside `(normalized)`",
+            });
+          }
+          i = closeParen + 1;
+          continue;
+        }
+
+        // @tag — email-context `@` (preceded by a word char) is stray in
+        // prose. Otherwise try `@word` and warn on unknown names.
+        if (text[i] === "@") {
+          const prev = i > 0 ? text[i - 1] : " ";
+          if (/\w/.test(prev)) {
+            errors.push({ start: i, end: i + 1, kind: "stray-at", message: "Stray `@` in prose" });
+            i++;
+            continue;
+          }
+          const at = /^@([\w-]+)/.exec(text.slice(i));
+          if (!at) {
+            errors.push({ start: i, end: i + 1, kind: "stray-at", message: "Stray `@` — must be followed by a tag name" });
+            i++;
+            continue;
+          }
+          const name = at[1];
+          const isStart = name.endsWith("-start");
+          const isEnd = !isStart && name.endsWith("-end");
+          let known;
+          if (isStart || isEnd) {
+            const base = name.slice(0, isStart ? -6 : -4);
+            known = this._spanCategory.has(base);
+          } else {
+            known = this._atCategory.has(name);
+          }
+          if (!known && !seenOrphan.has(i)) {
+            warnings.push({
+              start: i, end: i + at[0].length,
+              kind: "unknown-tag",
+              message: `Unknown \`@${name}\` — not in configured lists`,
+            });
+          }
+          i += at[0].length;
+          continue;
+        }
+
+        // Speaker — the only accepted shape is &sN-start / &sN-end.
+        if (text[i] === "&") {
+          const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
+          if (sp) { i += sp[0].length; continue; }
+          const partial = /^&s\d+[\w-]*/.exec(text.slice(i));
+          if (partial) {
+            errors.push({
+              start: i, end: i + partial[0].length,
+              kind: "malformed-speaker",
+              message:
+                `Malformed speaker: expected \`${partial[0].split("-")[0]}-start\``
+                + ` or \`${partial[0].split("-")[0]}-end\``,
+            });
+            i += partial[0].length;
+            continue;
+          }
+          // Any other `&` is stray in prose.
+          errors.push({ start: i, end: i + 1, kind: "stray-amp", message: "Stray `&`" });
+          i++;
+          continue;
+        }
+
+        // Prose stray characters. `#word` / `$word` / `!word` runs are
+        // highlighted as a single range so the whole broken sequence is
+        // visible; lone specials get a one-char range.
+        const c = text[i];
+        if (c === "#" || c === "$") {
+          const m = /^[#$][\w-]*/.exec(text.slice(i));
+          const len = m[0].length;
+          errors.push({
+            start: i, end: i + len,
+            kind: "stray-char",
+            message: `Stray \`${m[0]}\` — specials only belong inside \`(normalized)\``,
+          });
+          i += len;
+          continue;
+        }
+        if (c === "!") {
+          const prev = i > 0 ? text[i - 1] : "";
+          const next = text[i + 1] || "";
+          // OK when trailing a word, isolated, or repeated. Error only when
+          // it's a bare-word prefix like `!hello` / `!500`.
+          if (/\w/.test(prev) || !/\w/.test(next)) {
+            i++;
+            continue;
+          }
+          const m = /^!\w[\w-]*/.exec(text.slice(i));
+          const len = m ? m[0].length : 1;
+          errors.push({
+            start: i, end: i + len,
+            kind: "stray-prefix",
+            message: `Stray \`${text.slice(i, i + len)}\` — \`!\` may only trail a word or repeat`,
+          });
+          i += len;
+          continue;
+        }
+        if (c === "*" || c === "(" || c === ")" || c === "]" || c === "{" || c === "}") {
+          errors.push({
+            start: i, end: i + 1,
+            kind: "stray-char",
+            message: `Stray \`${c}\``,
+          });
+        }
+        i++;
+      }
+
+      return { errors, warnings };
+    }
+
+    // Scan a slice of `text` under prose rules and push stray-char /
+    // stray-prefix / stray-at / stray-amp errors into `errors`. Used for
+    // `[verbatim]` slots (which follow the same rules as free prose).
+    _flagProseSlice(text, from, to, errors) {
+      let i = from;
+      while (i < to) {
+        const c = text[i];
+        if (c === "#" || c === "$") {
+          const m = /^[#$][\w-]*/.exec(text.slice(i, to));
+          const len = m[0].length;
+          errors.push({ start: i, end: i + len, kind: "stray-char", message: `Stray \`${m[0]}\`` });
+          i += len;
+          continue;
+        }
+        if (c === "!") {
+          const prev = i > from ? text[i - 1] : "";
+          const next = text[i + 1] || "";
+          if (/\w/.test(prev) || !/\w/.test(next)) { i++; continue; }
+          const m = /^!\w[\w-]*/.exec(text.slice(i, to));
+          const len = m ? m[0].length : 1;
+          errors.push({ start: i, end: i + len, kind: "stray-prefix", message: `Stray \`${text.slice(i, i + len)}\`` });
+          i += len;
+          continue;
+        }
+        if (c === "@") {
+          errors.push({ start: i, end: i + 1, kind: "stray-at", message: "Stray `@`" });
+        } else if (c === "&") {
+          errors.push({ start: i, end: i + 1, kind: "stray-amp", message: "Stray `&`" });
+        } else if (c === "*" || c === "(" || c === ")" || c === "[" || c === "]" || c === "{" || c === "}") {
+          errors.push({ start: i, end: i + 1, kind: "stray-char", message: `Stray \`${c}\`` });
+        }
+        i++;
+      }
+    }
+
+    _buildOrphanChip(rawToken, srcStart, srcEnd) {
+      const role = rawToken.endsWith("-start") ? "start" : "end";
+      const missing = role === "start" ? "-end" : "-start";
+      return `<span class="rsml-orphan"`
+           + ` data-src="${srcStart}:${srcEnd}"`
+           + ` data-bs-toggle="tooltip" data-bs-title="orphan ${role}: no matching ${missing}">`
+           + `${this._esc(rawToken)}</span>`;
     }
 
     // Returns the index of the balanced closing bracket, or -1 if unbalanced.
@@ -1335,33 +1106,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
            + ` data-bs-toggle="tooltip" data-bs-title="${category}: ${t}">@${t}</span>`;
     }
 
-
-
-    // ---------- Internal: Undo/Redo ----------
-    _snapshot() {
-      return {
-        value: this.textarea.value,
-        start: this.textarea.selectionStart || 0,
-        end: this.textarea.selectionEnd || 0,
-      };
-    }
-    _applySnapshot(s) {
-      this.textarea.value = s.value;
-      this.textarea.setSelectionRange(s.start, s.end);
-    }
-    _recordState() {
-      if (this.isApplyingHistory) return;
-      const s = this._snapshot();
-      const latest = this.history[this.hIndex];
-      if (s.value !== latest.value) {
-        if (this.hIndex < this.history.length - 1) {
-          this.history = this.history.slice(0, this.hIndex + 1);
-        }
-        this.history.push(s);
-        this.hIndex = this.history.length - 1;
-      }
-    }
-
     // Walk up from the dblclick target to the nearest [data-src] element,
     // then focus the editor and select that source range.
     _jumpToSource(e) {
@@ -1438,6 +1182,19 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         self._walkTokens(text, (from, to, cls) => {
           marks.push(view.Decoration.mark({ class: cls }).range(from, to));
         });
+        const { errors, warnings } = self._findIssues(text);
+        for (const e of errors) {
+          marks.push(view.Decoration.mark({
+            class: "tok-error",
+            attributes: { title: e.message.replace(/`/g, "") },
+          }).range(e.start, e.end));
+        }
+        for (const w of warnings) {
+          marks.push(view.Decoration.mark({
+            class: "tok-warning",
+            attributes: { title: w.message.replace(/`/g, "") },
+          }).range(w.start, w.end));
+        }
         marks.sort((a, b) => a.from - b.from || a.startSide - b.startSide);
         return view.Decoration.set(marks);
       };
@@ -1643,6 +1400,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             if (!update.docChanged) return;
             ta.value = update.state.doc.toString();
             self._render();
+            self._updateStatus();
           }),
         ],
       });
@@ -1656,6 +1414,36 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       // Insert CM's DOM right after the (now hidden) textarea so layout
       // slots into the same place.
       ta.parentNode.insertBefore(this.view.dom, ta.nextSibling);
+
+      // Status bar directly under the editor — shows the current error count.
+      this._statusEl = document.createElement("div");
+      this._statusEl.className = "rsml-editor-status";
+      ta.parentNode.insertBefore(this._statusEl, this.view.dom.nextSibling);
+      this._updateStatus();
+    }
+
+    // Recompute error + warning counts and paint the status bar.
+    _updateStatus() {
+      if (!this._statusEl) return;
+      const { errors, warnings } = this._findIssues(this.textarea.value || "");
+      if (errors.length === 0 && warnings.length === 0) {
+        this._statusEl.textContent = "";
+        this._statusEl.style.display = "none";
+        return;
+      }
+      this._statusEl.style.display = "";
+      const parts = [];
+      if (errors.length) {
+        parts.push(
+          `<span class="rsml-error-count">✕ ${errors.length} error${errors.length === 1 ? "" : "s"}</span>`
+        );
+      }
+      if (warnings.length) {
+        parts.push(
+          `<span class="rsml-warning-count">⚠ ${warnings.length} warning${warnings.length === 1 ? "" : "s"}</span>`
+        );
+      }
+      this._statusEl.innerHTML = parts.join(`<span class="rsml-status-sep">·</span>`);
     }
 
     // Shared token walker: emits (from, to, class) tuples for every syntax
@@ -1663,6 +1451,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     _walkTokens(text, add) {
       let i = 0;
       const n = text.length;
+      const orphans = this._findOrphans(text);
       while (i < n) {
         const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
         if (pm) {
@@ -1706,7 +1495,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             if (isStart || isEnd) {
               const base = name.slice(0, isStart ? -6 : -4);
               const cat = this._spanCategory.get(base) || "unknown";
-              cls = `tok-span-${cat}`;
+              cls = `tok-span-${cat}${orphans.has(i) ? " tok-orphan" : ""}`;
             } else {
               const cat = this._atCategory.get(name) || "unknown";
               cls = `tok-at-${cat}`;
@@ -1719,7 +1508,8 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         if (text[i] === "&") {
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) {
-            add(i, i + sp[0].length, "tok-span-speaker");
+            const cls = `tok-span-speaker${orphans.has(i) ? " tok-orphan" : ""}`;
+            add(i, i + sp[0].length, cls);
             i += sp[0].length;
             continue;
           }
