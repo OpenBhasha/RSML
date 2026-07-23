@@ -809,40 +809,39 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           continue;
         }
 
-        // Bare `[…]` — only flag if it looks like an intended tag,
-        // i.e. immediately followed by `(`.
+        // Bare `[…](…)` — brackets are NEVER prose. Any `[` that doesn't
+        // form a valid tag is an error.
         if (text[i] === "[") {
           const closeBracket = this._matchBracket(text, i, "[", "]");
           if (closeBracket === -1) {
-            // Only flag if what follows *would have* been a tag payload
-            // (a `](` shortly after). Otherwise treat `[` as prose.
-            const nextParen = text.indexOf("](", i);
-            if (nextParen !== -1 && nextParen < text.indexOf("\n", i) + 1) {
-              errors.push({
-                start: i, end: i + 1,
-                kind: "unclosed-bracket",
-                message: "Unclosed `[`",
-              });
-            }
+            errors.push({
+              start: i, end: i + 1,
+              kind: "unclosed-bracket",
+              message: "Unclosed `[`",
+            });
             i++;
             continue;
           }
-          if (text[closeBracket + 1] === "(") {
-            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
-            if (closeParen === -1) {
-              errors.push({
-                start: closeBracket + 1, end: closeBracket + 2,
-                kind: "unclosed-paren",
-                message: "Unclosed `(`",
-              });
-              i = closeBracket + 2;
-              continue;
-            }
-            i = closeParen + 1;
+          if (text[closeBracket + 1] !== "(") {
+            errors.push({
+              start: i, end: closeBracket + 1,
+              kind: "invalid-tag",
+              message: "`[verbatim]` must be followed by `(normalized)`",
+            });
+            i = closeBracket + 1;
             continue;
           }
-          // Bare `[…]` with no `(` — treat as prose, not a tag.
-          i = closeBracket + 1;
+          const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
+          if (closeParen === -1) {
+            errors.push({
+              start: closeBracket + 1, end: closeBracket + 2,
+              kind: "unclosed-paren",
+              message: "Unclosed `(`",
+            });
+            i = closeBracket + 2;
+            continue;
+          }
+          i = closeParen + 1;
           continue;
         }
 
@@ -876,9 +875,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         if (text[i] === "&") {
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) { i += sp[0].length; continue; }
-          // Conservative malformed detection: only flag when the run
-          // starts with `&s<digits>` (looks intentional as a speaker
-          // marker). Random `&M`/`&amp;` in prose stays untouched.
+          // `&s<digits>` looking intentional but malformed.
           const partial = /^&s\d+[\w-]*/.exec(text.slice(i));
           if (partial) {
             errors.push({
@@ -891,8 +888,43 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             i += partial[0].length;
             continue;
           }
+          // Any other `&` at all is stray — flagged below.
         }
 
+        // Fall-through stray character detection. Runs only when NONE of the
+        // valid tag patterns above consumed this position. RSML treats every
+        // one of these as syntactic — prose transcripts never contain them
+        // in isolation.
+        const c = text[i];
+        if (c === "#" || c === "$" || c === "*"
+            || c === "(" || c === ")" || c === "[" || c === "]"
+            || c === "{" || c === "}") {
+          errors.push({
+            start: i, end: i + 1,
+            kind: "stray-char",
+            message: `Stray \`${c}\``,
+          });
+        } else if (c === "!" && /[A-Za-z]/.test(text[i + 1] || "")) {
+          // `!` is fine as punctuation (isolated, trailing, or `!!!`), but
+          // never as a prefix on a bare word — that's a broken tag.
+          errors.push({
+            start: i, end: i + 1,
+            kind: "stray-prefix",
+            message: "`!` before a letter — must be followed by `[verbatim](normalized)`",
+          });
+        } else if (c === "@") {
+          errors.push({
+            start: i, end: i + 1,
+            kind: "stray-at",
+            message: "Stray `@` — must be followed by a tag name",
+          });
+        } else if (c === "&") {
+          errors.push({
+            start: i, end: i + 1,
+            kind: "stray-amp",
+            message: "Stray `&` — must be followed by `sN-start` or `sN-end`",
+          });
+        }
         i++;
       }
 
