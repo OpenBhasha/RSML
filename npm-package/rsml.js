@@ -151,6 +151,27 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   background-color: rgba(255, 213, 0, 0.28);
   border-radius: 3px;
 }
+/* Editor-side orphan indicator: red wavy underline on an unpaired
+   -start / -end token so the error is visible in the source too. */
+.tok-orphan {
+  text-decoration: underline wavy #dc3545;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+/* Status bar under the editor. */
+.rsml-editor-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.8em;
+  color: #6c757d;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+.rsml-editor-status .rsml-error-count {
+  color: #dc3545;
+  font-weight: 600;
+}
 /* Pitch-contour spans: inline (wraps naturally with content) with an inline
    arrow prefix — no absolute positioning, so the arrow can never orphan
    at the end of a line while its content wraps to the next. */
@@ -397,6 +418,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     destroy() {
       this.textarea.removeEventListener("input", this._onInput);
       if (this.view) { this.view.destroy(); this.view = null; }
+      if (this._statusEl && this._statusEl.parentNode) {
+        this._statusEl.parentNode.removeChild(this._statusEl);
+        this._statusEl = null;
+      }
       if (this._onOutputDblclick && this.output) {
         this.output.removeEventListener("dblclick", this._onOutputDblclick);
         this._onOutputDblclick = null;
@@ -1042,6 +1067,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             if (!update.docChanged) return;
             ta.value = update.state.doc.toString();
             self._render();
+            self._updateStatus();
           }),
         ],
       });
@@ -1055,6 +1081,27 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       // Insert CM's DOM right after the (now hidden) textarea so layout
       // slots into the same place.
       ta.parentNode.insertBefore(this.view.dom, ta.nextSibling);
+
+      // Status bar directly under the editor — shows the current error count.
+      this._statusEl = document.createElement("div");
+      this._statusEl.className = "rsml-editor-status";
+      ta.parentNode.insertBefore(this._statusEl, this.view.dom.nextSibling);
+      this._updateStatus();
+    }
+
+    // Recompute the orphan count and paint the status bar. Hidden when zero.
+    _updateStatus() {
+      if (!this._statusEl) return;
+      const n = this._findOrphans(this.textarea.value || "").size;
+      if (n === 0) {
+        this._statusEl.textContent = "";
+        this._statusEl.style.display = "none";
+      } else {
+        this._statusEl.style.display = "";
+        this._statusEl.innerHTML =
+          `<span class="rsml-error-count">⚠ ${n} error${n === 1 ? "" : "s"}</span>`
+          + ` <span>unpaired <code>-start</code> / <code>-end</code></span>`;
+      }
     }
 
     // Shared token walker: emits (from, to, class) tuples for every syntax
@@ -1062,6 +1109,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     _walkTokens(text, add) {
       let i = 0;
       const n = text.length;
+      const orphans = this._findOrphans(text);
       while (i < n) {
         const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
         if (pm) {
@@ -1105,7 +1153,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             if (isStart || isEnd) {
               const base = name.slice(0, isStart ? -6 : -4);
               const cat = this._spanCategory.get(base) || "unknown";
-              cls = `tok-span-${cat}`;
+              cls = `tok-span-${cat}${orphans.has(i) ? " tok-orphan" : ""}`;
             } else {
               const cat = this._atCategory.get(name) || "unknown";
               cls = `tok-at-${cat}`;
@@ -1118,7 +1166,8 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         if (text[i] === "&") {
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) {
-            add(i, i + sp[0].length, "tok-span-speaker");
+            const cls = `tok-span-speaker${orphans.has(i) ? " tok-orphan" : ""}`;
+            add(i, i + sp[0].length, cls);
             i += sp[0].length;
             continue;
           }
