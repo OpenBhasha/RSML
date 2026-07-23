@@ -723,6 +723,19 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       let i = 0;
       const n = text.length;
       while (i < n) {
+        // Prefix immediately followed by a close bracket — always malformed
+        // (`!)`, `#]`, `$}`, etc). No legitimate use.
+        const pmClose = /^([!#$])[\])}]/.exec(text.slice(i));
+        if (pmClose) {
+          errors.push({
+            start: i, end: i + 2,
+            kind: "stray-bracket",
+            message: `Stray \`${pmClose[0]}\` — a prefix must be followed by \`[verbatim](normalized)\``,
+          });
+          i += 2;
+          continue;
+        }
+
         // Prefix followed by `(` instead of `[` — user typed `!en(foo)` etc.
         // Flag it before the normal prefix-`[` match so we don't drop through
         // to per-character walking.
