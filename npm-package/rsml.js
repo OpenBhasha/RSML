@@ -29,31 +29,6 @@
   line-height: 1.9;
 }
 .rsml-content > * { line-height: inherit; }
-.rsml-suggestions {
-  position: absolute; /* <--- CHANGED FROM fixed TO absolute */
-  z-index: 2147483000;
-  background: #fff;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  box-shadow: 0 6px 14px rgba(0,0,0,.15);
-  min-width: 160px;
-  max-width: 280px;
-  max-height: 200px;
-  overflow-y: auto;
-  display: none;
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.9rem;
-  color: #222;
-  padding: 4px 0;
-  animation: rsmlFadeIn .12s ease-in;
-  pointer-events: auto;
-}
-.rsml-suggestions::-webkit-scrollbar { width: 6px; }
-.rsml-suggestions::-webkit-scrollbar-thumb { background: #bbb; border-radius: 3px; }
-.rsml-suggestions::-webkit-scrollbar-thumb:hover { background: #999; }
-.rsml-suggestion-item { padding: 5px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rsml-suggestion-item:hover, .rsml-suggestion-item.active { background:#0d6efd; color:#fff; }
-
 @keyframes rsmlFadeIn { from { opacity:0; transform: translateY(-3px);} to { opacity:1; transform:none;} }
 
 code-mix, accent, mispronunciation, entity,
@@ -236,34 +211,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   }
 
   // Get pixel coords for caret in a textarea
-  function getCaretCoordinates(el, position) {
-    const div = document.createElement("div");
-    const style = getComputedStyle(el);
-    for (const prop of style) div.style[prop] = style[prop];
-
-    div.style.position = "absolute";
-    div.style.visibility = "hidden";
-    div.style.whiteSpace = "pre-wrap";
-    div.style.wordWrap = "break-word";
-    div.style.overflow = "auto";
-    div.style.height = el.offsetHeight + "px";
-    div.style.width = el.offsetWidth + "px";
-
-    const span = document.createElement("span");
-    const text = el.value.substring(0, position);
-    const remainder = el.value.substring(position) || ".";
-    div.textContent = text;
-    span.textContent = remainder;
-    div.appendChild(span);
-    document.body.appendChild(div);
-
-    const top = span.offsetTop - el.scrollTop;
-    const left = span.offsetLeft - el.scrollLeft;
-    document.body.removeChild(div);
-
-    return { top, left };
-  }
-
   // Optional Bootstrap tooltip activation — no-op if Bootstrap not present.
   function activateTooltips(rootEl) {
     if (!rootEl) return;
@@ -344,7 +291,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
      * @param {Array<string>} [opts.tags]
      * @param {Object} [opts.entities]
      * @param {Object} [opts.languages]
-     * @param {boolean} [opts.enableUndoRedo=true]
      * @param {boolean} [opts.demoText=false]
      */
     constructor(opts) {
@@ -361,7 +307,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           prosodySpans: DEFAULT_PROSODY_SPANS.slice(),
           entities: Object.assign({}, DEFAULT_ENTITY_MAP),
           languages: Object.assign({}, DEFAULT_LANGS),
-          enableUndoRedo: true,
           demoText: false,
         },
         opts || {}
@@ -415,30 +360,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       this.renderMode = "normalized"; // or "verbatim"
       this._toggleInjected = false;
 
-      // --- Suggestion state ---
-      this.suggestionsBox = document.createElement("div");
-      this.suggestionsBox.className = "rsml-suggestions";
-      document.body.appendChild(this.suggestionsBox);
-
-      this.currentTrigger = "";
-      this.selectedIndex = -1;
-      this.currentSuggestions = [];
-
-      // --- Undo/Redo state ---
-      this.isApplyingHistory = false;
-      this.history = [this._snapshot()];
-      this.hIndex = 0;
-
-      // --- Bindings ---
+      // Textarea `input` is the fallback path: if CodeMirror never mounts
+      // the render pane still updates as the user types.
       this._onInput = this._onInput.bind(this);
-      this._onKeydown = this._onKeydown.bind(this);
-      this._onScrollOrResize = this._onScrollOrResize.bind(this);
-
-      // --- Wire up ---
       this.textarea.addEventListener("input", this._onInput);
-      this.textarea.addEventListener("keydown", this._onKeydown);
-      window.addEventListener("scroll", this._onScrollOrResize, true);
-      window.addEventListener("resize", this._onScrollOrResize);
 
       // Initial render/demo
       if (this.opts.demoText) {
@@ -458,349 +383,37 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     // ---------- Public API ----------
     destroy() {
       this.textarea.removeEventListener("input", this._onInput);
-      this.textarea.removeEventListener("keydown", this._onKeydown);
-      window.removeEventListener("scroll", this._onScrollOrResize, true);
-      window.removeEventListener("resize", this._onScrollOrResize);
-      if (this.suggestionsBox && this.suggestionsBox.parentNode) {
-        this.suggestionsBox.parentNode.removeChild(this.suggestionsBox);
-      }
-      if (this._hlResizeObserver) {
-        this._hlResizeObserver.disconnect();
-        this._hlResizeObserver = null;
-      }
-      if (this._onSelectionChange) {
-        document.removeEventListener("selectionchange", this._onSelectionChange);
-        this._onSelectionChange = null;
-      }
+      if (this.view) { this.view.destroy(); this.view = null; }
       if (this._onOutputDblclick && this.output) {
         this.output.removeEventListener("dblclick", this._onOutputDblclick);
         this._onOutputDblclick = null;
       }
     }
     setValue(str) {
-      this.textarea.value = str || "";
-      this._recordState();
+      const value = str || "";
+      this.textarea.value = value;
+      if (this.view && this._cm) {
+        this.view.dispatch({
+          changes: { from: 0, to: this.view.state.doc.length, insert: value },
+        });
+      }
       this._render();
     }
     getValue() {
       return this.textarea.value;
     }
     undo() {
-      if (!this.opts.enableUndoRedo) return;
-      if (this.hIndex > 0) {
-        this.isApplyingHistory = true;
-        this.hIndex--;
-        this._applySnapshot(this.history[this.hIndex]);
-        this.isApplyingHistory = false;
-        this._render();
-      }
+      if (this.view && this._cm) return this._cm.commands.undo(this.view);
     }
     redo() {
-      if (!this.opts.enableUndoRedo) return;
-      if (this.hIndex < this.history.length - 1) {
-        this.isApplyingHistory = true;
-        this.hIndex++;
-        this._applySnapshot(this.history[this.hIndex]);
-        this.isApplyingHistory = false;
-        this._render();
-      }
+      if (this.view && this._cm) return this._cm.commands.redo(this.view);
     }
 
     // ---------- Internal: Events ----------
     _onInput() {
+      // Fallback path used only when CodeMirror hasn't mounted; the
+      // CM updateListener drives re-render directly otherwise.
       this._render();
-      if (this.opts.enableUndoRedo) this._recordState();
-      this._handleTriggers();
-    }
-    _onKeydown(e) {
-      const start = this.textarea.selectionStart;
-      const end = this.textarea.selectionEnd;
-      const selectedText = this.textarea.value.slice(start, end);
-
-      // Insert entity scaffold with '#'  -> #[verbatim](normalized)
-      if (e.key === "#") {
-        e.preventDefault();
-        const insert = selectedText ? `#[${selectedText}]()` : `#[]()`;
-        this.textarea.setRangeText(insert, start, end, "end");
-        this.textarea.setSelectionRange(start + 1, start + 1);
-        this.currentTrigger = "#";
-        this._showSuggestions(
-          Object.keys(this.opts.entities).map(
-            (k) => `${k} (${this.opts.entities[k]})`
-          )
-        );
-        return;
-      }
-
-      // Insert code-mix scaffold with '!'  -> !lang[verbatim](normalized)
-      if (e.key === "!") {
-        e.preventDefault();
-        const insert = selectedText ? `![${selectedText}]()` : `![]()`;
-        this.textarea.setRangeText(insert, start, end, "end");
-        this.textarea.setSelectionRange(start + 1, start + 1);
-        this.currentTrigger = "!";
-        this._showSuggestions(
-          Object.keys(this.opts.languages).map(
-            (c) => `${c} (${this.opts.languages[c]})`
-          )
-        );
-        return;
-      }
-
-      // Insert accent scaffold with '$'  -> $accent-name[verbatim](normalized)
-      if (e.key === "$") {
-        e.preventDefault();
-        const insert = selectedText ? `$[${selectedText}]()` : `$[]()`;
-        this.textarea.setRangeText(insert, start, end, "end");
-        this.textarea.setSelectionRange(start + 1, start + 1);
-        this.currentTrigger = "$";
-        return;
-      }
-
-      // Speaker span with '&'  -> shows sN-start / sN-end suggestions.
-      if (e.key === "&") {
-        e.preventDefault();
-        this.textarea.setRangeText("&", start, end, "end");
-        this.textarea.setSelectionRange(start + 1, start + 1);
-        this.currentTrigger = "&";
-        this._showSuggestions(this._buildSpeakerSuggestions(""));
-        return;
-      }
-
-      // Suggestion navigation
-      if (this.suggestionsBox.style.display !== "none") {
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          this.selectedIndex =
-            (this.selectedIndex + 1) % this.currentSuggestions.length;
-          this._updateSelection();
-          return;
-        }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          this.selectedIndex =
-            (this.selectedIndex - 1 + this.currentSuggestions.length) %
-            this.currentSuggestions.length;
-          this._updateSelection();
-          return;
-        }
-        if (
-          e.key === "Enter" ||
-          (e.key === "Tab" && this.selectedIndex >= 0)
-        ) {
-          e.preventDefault();
-          this._insertTag(this.currentSuggestions[this.selectedIndex]);
-          return;
-        }
-        if (e.key === "Escape") {
-          this._hideSuggestions();
-          return;
-        }
-      }
-
-      // Bracket wrapping shortcuts
-      //   `[` -> [selection](  )   (bare mispronunciation scaffold)
-      //   `(` -> (selection)
-      if (["[", "("].includes(e.key)) {
-        e.preventDefault();
-        let wrapInsert = "", cursorOffset;
-        if (e.key === "[") {
-          wrapInsert = selectedText ? `[${selectedText}]()` : `[]()`;
-          cursorOffset = start + (selectedText ? selectedText.length + 3 : 1);
-        } else {
-          wrapInsert = selectedText ? `(${selectedText})` : `()`;
-          cursorOffset = start + (selectedText ? selectedText.length + 2 : 1);
-        }
-        this.textarea.setRangeText(wrapInsert, start, end, "end");
-        this.textarea.setSelectionRange(cursorOffset, cursorOffset);
-        this.textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
-        return;
-      }
-
-      // Undo/Redo keyboard shortcuts
-      if (this.opts.enableUndoRedo) {
-        const isMod = e.metaKey || e.ctrlKey;
-        if (isMod && e.key.toLowerCase() === "z" && !e.shiftKey) {
-          e.preventDefault();
-          this.undo();
-          return;
-        }
-        const isRedoKey = e.key.toLowerCase() === "y";
-        const isRedoShiftZ = e.shiftKey && e.key.toLowerCase() === "z";
-        if (isMod && (isRedoKey || isRedoShiftZ)) {
-          e.preventDefault();
-          this.redo();
-          return;
-        }
-      }
-    }
-    _onScrollOrResize() {
-      if (this.suggestionsBox.style.display !== "none") {
-        this._positionBoxAtCaret();
-      }
-    }
-
-    // ---------- Internal: Suggestions ----------
-    _handleTriggers() {
-      const cursorPos = this.textarea.selectionStart;
-      const before = this.textarea.value.slice(0, cursorPos);
-
-      const matchAt = before.match(/@[\w-]*$/);
-      const matchHash = before.match(/#[A-Za-z_]*$/);
-      const matchBang = before.match(/![A-Za-z_]*$/);
-      const matchAmp = before.match(/&[\w-]*$/);
-
-      if (matchAmp) {
-        this.currentTrigger = "&";
-        this._showSuggestions(this._buildSpeakerSuggestions(matchAmp[0].substring(1)));
-        return;
-      }
-      if (matchAt) {
-        this.currentTrigger = "@";
-        const query = matchAt[0];
-        const filtered = this.opts.tags.filter((t) => t.startsWith(query));
-        this._showSuggestions(filtered.length ? filtered : this.opts.tags);
-        return;
-      }
-      if (matchHash) {
-        this.currentTrigger = "#";
-        const q = matchHash[0].substring(1).toUpperCase();
-        const keys = Object.keys(this.opts.entities);
-        const filtered = keys.filter((k) => k.startsWith(q));
-        this._showSuggestions(filtered.map((k) => `${k} (${this.opts.entities[k]})`));
-        return;
-      }
-      if (matchBang) {
-        this.currentTrigger = "!";
-        const q = matchBang[0].substring(1).toLowerCase();
-        const codes = Object.keys(this.opts.languages);
-        const filtered = codes.filter((c) => c.startsWith(q));
-        this._showSuggestions(filtered.map((c) => `${c} (${this.opts.languages[c]})`));
-        return;
-      }
-      this._hideSuggestions();
-    }
-
-    _showSuggestions(list) {
-      // Clear previous suggestions
-      this.suggestionsBox.innerHTML = "";
-      this.currentSuggestions = list.slice();
-      this.selectedIndex = list.length ? 0 : -1;
-    
-      // Hide if empty
-      if (!list.length || !this.textarea || !document.body.contains(this.textarea)) {
-        return this._hideSuggestions();
-      }
-    
-      // Populate suggestion items
-      list.forEach((item, i) => {
-        const div = document.createElement("div");
-        div.className = "rsml-suggestion-item";
-        if (i === 0) div.classList.add("active");
-        div.textContent = item;
-    
-        // Handle click (mousedown preferred to prevent blur)
-        div.addEventListener("mousedown", (e) => {
-          e.preventDefault(); // prevent blur
-          this._insertTag(item);
-        });
-    
-        this.suggestionsBox.appendChild(div);
-      });
-    
-      // --- FIX START ---
-      // 1. Make it part of the layout so it has dimensions for calculation
-      this.suggestionsBox.style.display = "block";
-      this.suggestionsBox.style.visibility = "hidden"; 
-    
-      // 2. Position at caret (Now it can safely measure width/height for boundary checks)
-      try {
-        this._positionBoxAtCaret();
-      } catch (err) {
-        console.warn("Caret positioning failed:", err);
-        // If positioning fails, hide it again to prevent a broken UI
-        this.suggestionsBox.style.display = "none";
-        this.suggestionsBox.style.visibility = "visible";
-        return this._hideSuggestions(); 
-      }
-    
-      // 3. Make it visible to the user
-      this.suggestionsBox.style.visibility = "visible";
-      // --- FIX END ---
-    }
-
-    _updateSelection() {
-      const items = Array.from(this.suggestionsBox.children);
-      items.forEach((el, i) => {
-        el.classList.toggle("active", i === this.selectedIndex);
-        if (i === this.selectedIndex)
-          el.scrollIntoView({ block: "nearest" });
-      });
-    }
-
-    _hideSuggestions() {
-      this.suggestionsBox.innerHTML = "";
-      this.suggestionsBox.style.display = "none";
-      this.selectedIndex = -1;
-      this.currentSuggestions = [];
-    }
-
-    _positionBoxAtCaret() {
-      const coords = getCaretCoordinates(this.textarea, this.textarea.selectionStart);
-      const rect = this.textarea.getBoundingClientRect();
-      this.suggestionsBox.style.left = `${coords.left + rect.left + window.scrollX}px`;
-      this.suggestionsBox.style.top = `${coords.top + rect.top + 24 + window.scrollY}px`;
-    }
-
-    _insertTag(raw) {
-      const tagOnly = raw.includes("(") ? raw.split(" ")[0] : raw;
-      const cursorPos = this.textarea.selectionStart;
-      const value = this.textarea.value;
-
-      // Insert the type name between a prefix char and the following '['.
-      const prefixInsert = (prefixChar) => {
-        const iPre = value.lastIndexOf(prefixChar, cursorPos);
-        const iBr = value.indexOf("[", iPre);
-        if (iPre === -1 || iBr <= iPre) return false;
-        const before = value.slice(0, iPre + 1);
-        const after = value.slice(iBr);
-        const newText = `${before}${tagOnly}${after}`;
-        this.textarea.value = newText;
-        const caret = newText.indexOf("()", iBr) + 1;
-        this.textarea.setSelectionRange(caret, caret);
-        this._hideSuggestions();
-        this.textarea.focus();
-        this._render();
-        if (this.opts.enableUndoRedo) this._recordState();
-        return true;
-      };
-
-      if (this.currentTrigger === "#" && prefixInsert("#")) return;
-      if (this.currentTrigger === "!" && prefixInsert("!")) return;
-
-      if (this.currentTrigger === "@") {
-        const start =
-          cursorPos -
-          (value.slice(0, cursorPos).match(/@[\w-]*$/)?.[0].length || 1);
-        this.textarea.setRangeText(tagOnly + " ", start, cursorPos, "end");
-        const newPos = start + tagOnly.length + 1;
-        this.textarea.setSelectionRange(newPos, newPos);
-        this._hideSuggestions();
-        this.textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
-        return;
-      }
-
-      if (this.currentTrigger === "&") {
-        const start =
-          cursorPos -
-          (value.slice(0, cursorPos).match(/&[\w-]*$/)?.[0].length || 1);
-        const insert = `&${tagOnly} `;
-        this.textarea.setRangeText(insert, start, cursorPos, "end");
-        const newPos = start + insert.length;
-        this.textarea.setSelectionRange(newPos, newPos);
-        this._hideSuggestions();
-        this.textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
-      }
     }
 
     // Build the &-trigger suggestion list. Every speaker that already appears
@@ -881,253 +494,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       content.innerHTML = html;
       this.output.appendChild(content);
 
-      this._paintHighlight();
       requestAnimationFrame(() => activateTooltips(this.output));
-    }
-
-    /* =========================
-       Source Highlight Overlay
-    ========================= */
-    _installHighlightOverlay() {
-      if (this._hlInstalled) return;
-      this._hlInstalled = true;
-
-      const ta = this.textarea;
-      const container = document.createElement("div");
-      container.className = "rsml-hl-container";
-      ta.parentNode.insertBefore(container, ta);
-      container.appendChild(ta);
-
-      const highlights = document.createElement("div");
-      highlights.className = "rsml-hl-highlights";
-      highlights.setAttribute("aria-hidden", "true");
-      const content = document.createElement("div");
-      content.className = "rsml-hl-content";
-      highlights.appendChild(content);
-      container.insertBefore(highlights, ta);
-
-      this._hlContainer = container;
-      this._hlHighlights = highlights;
-      this._hlContent = content;
-      ta.classList.add("rsml-hl-textarea");
-
-      ta.addEventListener("scroll", () => this._syncHighlightScroll());
-
-      // Caret-position tracking. `selectionStart` isn't reliably updated by
-      // the time `click` / `keyup` fire, so listen to `selectionchange`
-      // (which fires AFTER the caret has actually moved) as the primary
-      // signal, and defer the pointer/keyboard fallbacks to the next frame.
-      this._onSelectionChange = () => {
-        if (document.activeElement === ta) this._updateMatchHighlight();
-      };
-      document.addEventListener("selectionchange", this._onSelectionChange);
-      const deferred = () => requestAnimationFrame(() => this._updateMatchHighlight());
-      ta.addEventListener("click", deferred);
-      ta.addEventListener("keyup", deferred);
-      ta.addEventListener("focus", deferred);
-      ta.addEventListener("blur", () => this._clearMatchHighlight());
-
-      if (typeof ResizeObserver !== "undefined") {
-        this._hlResizeObserver = new ResizeObserver(() => this._syncHighlightStyles());
-        this._hlResizeObserver.observe(ta);
-      }
-
-      this._syncHighlightStyles();
-    }
-
-    _syncHighlightStyles() {
-      if (!this._hlHighlights) return;
-      const cs = getComputedStyle(this.textarea);
-      const hl = this._hlHighlights;
-      const props = [
-        // Font metrics
-        "fontFamily","fontSize","fontWeight","fontStyle",
-        "fontVariant","fontStretch","fontOpticalSizing",
-        "fontKerning","fontFeatureSettings","fontVariationSettings",
-        "fontVariantLigatures","fontVariantNumeric","fontVariantCaps",
-        "fontVariantEastAsian","fontSynthesis",
-        // Text metrics
-        "lineHeight","letterSpacing","wordSpacing","tabSize",
-        "textIndent","textTransform","textAlign","textRendering",
-        "direction","unicodeBidi","writingMode",
-        // Layout
-        "boxSizing",
-        "paddingTop","paddingRight","paddingBottom","paddingLeft",
-        "borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth",
-        "borderTopStyle","borderRightStyle","borderBottomStyle","borderLeftStyle",
-        "borderTopLeftRadius","borderTopRightRadius",
-        "borderBottomLeftRadius","borderBottomRightRadius",
-      ];
-      for (const p of props) {
-        const v = cs[p];
-        if (v !== undefined && v !== "") hl.style[p] = v;
-      }
-      // Border must not paint (backdrop is behind the textarea's border already).
-      hl.style.borderColor = "transparent";
-    }
-
-    _syncHighlightScroll() {
-      if (!this._hlContent) return;
-      const ta = this.textarea;
-      this._hlContent.style.transform =
-        `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
-    }
-
-    _paintHighlight() {
-      if (!this._hlContent) return;
-      this._hlContent.innerHTML = this._highlightSource(this.textarea.value || "");
-      this._syncHighlightScroll();
-      this._updateMatchHighlight();
-    }
-
-    // Character-preserving tokenizer. Only the SYNTAX gets a color; lexical
-    // content (verbatim/normalized slots and plain text) stays default.
-    // Every syntax fragment carries a `data-group` attribute so all fragments
-    // belonging to the same tag (bracket-form opener/mid/closer, or a
-    // -start/-end pair) can be co-highlighted when the caret lands on one.
-    _highlightSource(text) {
-      let out = "";
-      let i = 0;
-      const n = text.length;
-      const esc = (s) => this._esc(s);
-
-      // Reset per-render range table: maps a source-character range to the
-      // group id shared by every syntax fragment of that tag.
-      this._synRanges = [];
-      const startCount = new Map();
-      const endCount = new Map();
-      let bracketCounter = 0;
-      const record = (start, end, group) => {
-        this._synRanges.push({ start, end, group });
-      };
-      const pairGroup = (name, role) => {
-        const map = role === "start" ? startCount : endCount;
-        const idx = map.get(name) || 0;
-        map.set(name, idx + 1);
-        return `p:${name}:${idx}`;
-      };
-
-      while (i < n) {
-        // Prefixed bracket form:  ! # $  + optional type + [v](n)
-        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
-        if (pm) {
-          const prefix = pm[1];
-          const openBracket = i + pm[0].length - 1;
-          const closeBracket = this._matchBracket(text, openBracket, "[", "]");
-          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
-            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
-            if (closeParen !== -1) {
-              const cat = prefix === "!" ? "code-mix"
-                        : prefix === "#" ? "entity"
-                        : "accent";
-              const g = `b${bracketCounter++}`;
-              const head = text.slice(i, openBracket + 1);          // "!en["
-              const verbatim = text.slice(openBracket + 1, closeBracket);
-              const normalized = text.slice(closeBracket + 2, closeParen);
-              record(i, openBracket + 1, g);
-              record(closeBracket, closeBracket + 2, g);
-              record(closeParen, closeParen + 1, g);
-              out += `<span class="tok-${cat}" data-group="${g}">${esc(head)}</span>`;
-              out += esc(verbatim);
-              out += `<span class="tok-${cat}" data-group="${g}">${esc("](")}</span>`;
-              out += esc(normalized);
-              out += `<span class="tok-${cat}" data-group="${g}">${esc(")")}</span>`;
-              i = closeParen + 1;
-              continue;
-            }
-          }
-        }
-
-        // Bare mispronunciation:  [v](n)
-        if (text[i] === "[") {
-          const closeBracket = this._matchBracket(text, i, "[", "]");
-          if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
-            const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
-            if (closeParen !== -1) {
-              const g = `b${bracketCounter++}`;
-              const verbatim = text.slice(i + 1, closeBracket);
-              const normalized = text.slice(closeBracket + 2, closeParen);
-              record(i, i + 1, g);
-              record(closeBracket, closeBracket + 2, g);
-              record(closeParen, closeParen + 1, g);
-              out += `<span class="tok-mispronunciation" data-group="${g}">${esc("[")}</span>`;
-              out += esc(verbatim);
-              out += `<span class="tok-mispronunciation" data-group="${g}">${esc("](")}</span>`;
-              out += esc(normalized);
-              out += `<span class="tok-mispronunciation" data-group="${g}">${esc(")")}</span>`;
-              i = closeParen + 1;
-              continue;
-            }
-          }
-        }
-
-        // @tag / @name-start / @name-end
-        if (text[i] === "@") {
-          const at = /^@([\w-]+)/.exec(text.slice(i));
-          if (at) {
-            const name = at[1];
-            const isStart = name.endsWith("-start");
-            const isEnd = !isStart && name.endsWith("-end");
-            let cls, dataAttrs = "";
-            if (isStart || isEnd) {
-              const base = name.slice(0, isStart ? -6 : -4);
-              const cat = this._spanCategory.get(base) || "unknown";
-              cls = `tok-span-${cat}`;
-              const g = pairGroup(base, isStart ? "start" : "end");
-              record(i, i + at[0].length, g);
-              dataAttrs = ` data-group="${g}"`;
-            } else {
-              const cat = this._atCategory.get(name) || "unknown";
-              cls = `tok-at-${cat}`;
-            }
-            out += `<span class="${cls}"${dataAttrs}>${esc(at[0])}</span>`;
-            i += at[0].length;
-            continue;
-          }
-        }
-
-        // Speaker span: &sN-start / &sN-end
-        if (text[i] === "&") {
-          const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
-          if (sp) {
-            const g = pairGroup(sp[1], sp[2]);
-            record(i, i + sp[0].length, g);
-            out += `<span class="tok-span-speaker" data-group="${g}">`
-                 + `${esc(sp[0])}</span>`;
-            i += sp[0].length;
-            continue;
-          }
-        }
-
-        // Literal character.
-        const c = text[i];
-        out += (c === "&") ? "&amp;" : (c === "<") ? "&lt;" : (c === ">") ? "&gt;" : c;
-        i++;
-      }
-
-      // Trailing newline: textareas render an empty final line after '\n',
-      // pre-wrap doesn't unless we add a sentinel.
-      if (text.endsWith("\n")) out += " ";
-      return out;
-    }
-
-    _updateMatchHighlight() {
-      if (!this._hlContent) return;
-      this._clearMatchHighlight();
-      if (!this._synRanges || !this._synRanges.length) return;
-      const pos = this.textarea.selectionStart;
-      const hit = this._synRanges.find((r) => pos >= r.start && pos <= r.end);
-      if (!hit) return;
-      this._hlContent
-        .querySelectorAll(`[data-group="${CSS.escape(hit.group)}"]`)
-        .forEach((el) => el.classList.add("tok-match"));
-    }
-
-    _clearMatchHighlight() {
-      if (!this._hlContent) return;
-      this._hlContent
-        .querySelectorAll(".tok-match")
-        .forEach((el) => el.classList.remove("tok-match"));
     }
 
     /* =========================
@@ -1333,33 +700,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       return `<span class="rsml-at rsml-at-${category}"`
            + ` data-token="@${t}" data-category="${category}"${srcAttr}`
            + ` data-bs-toggle="tooltip" data-bs-title="${category}: ${t}">@${t}</span>`;
-    }
-
-
-
-    // ---------- Internal: Undo/Redo ----------
-    _snapshot() {
-      return {
-        value: this.textarea.value,
-        start: this.textarea.selectionStart || 0,
-        end: this.textarea.selectionEnd || 0,
-      };
-    }
-    _applySnapshot(s) {
-      this.textarea.value = s.value;
-      this.textarea.setSelectionRange(s.start, s.end);
-    }
-    _recordState() {
-      if (this.isApplyingHistory) return;
-      const s = this._snapshot();
-      const latest = this.history[this.hIndex];
-      if (s.value !== latest.value) {
-        if (this.hIndex < this.history.length - 1) {
-          this.history = this.history.slice(0, this.hIndex + 1);
-        }
-        this.history.push(s);
-        this.hIndex = this.history.length - 1;
-      }
     }
 
     // Walk up from the dblclick target to the nearest [data-src] element,
