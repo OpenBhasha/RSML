@@ -1269,7 +1269,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     _buildTaggedHTML(prefix, type, verbatim, normalized, srcStart, srcEnd) {
       const tag = this._prefixToTagName(prefix);
       const vInner = this._esc(verbatim);
-      const nInner = this._esc(normalized);
+      // An empty normalized slot mirrors the verbatim so the render doesn't
+      // go blank when the user hasn't typed a normalized form yet.
+      const nInner = this._esc(normalized.trim() === "" ? verbatim : normalized);
 
       let title = "";
       let dataAttrs = "";
@@ -1480,7 +1482,6 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       // pressing Enter) render as a code-mix without needing to pick from
       // the popup.
       const wrapPrefixes = new Set(["!", "#", "$", "["]);
-      const bracketPrefixRe = /(^|\s)([!#$](?:[A-Za-z][\w-]*)?)$/;
       const wrapHandler = view.EditorView.inputHandler.of((v, from, to, insert) => {
         if (!wrapPrefixes.has(insert)) return false;
 
@@ -1506,22 +1507,24 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           return true;
         }
 
-        // Case 2: typing `[` right after a bare prefix — auto-close as `]()`.
+        // Case 2: typing `[` with no selection — auto-close the whole
+        // scaffold as `[]()`. This covers three flows uniformly:
+        //   - Bare mispronunciation:  `[` → `[]()`
+        //   - After a bare prefix:    `!` `[` → `![]()`
+        //   - After a typed prefix:   `#PER` `[` → `#PER[]()`
+        // In every case the caret lands between `[` and `]` ready for
+        // verbatim input.
         if (insert === "[") {
           const doc = v.state.doc;
-          const scanStart = Math.max(0, from - 40);
-          const before = doc.sliceString(scanStart, from);
-          if (bracketPrefixRe.test(before)) {
-            // Don't re-scaffold if a `[]()` shell already sits at the caret.
-            const after = doc.sliceString(from, Math.min(from + 3, doc.length));
-            if (after.startsWith("[")) return false;
-            v.dispatch({
-              changes: { from, to, insert: "[]()" },
-              selection: { anchor: from + 1 }, // between `[` and `]`
-              userEvent: "input.type",
-            });
-            return true;
-          }
+          // Don't re-scaffold if a `[]()` shell already sits at the caret.
+          const after = doc.sliceString(from, Math.min(from + 3, doc.length));
+          if (after.startsWith("[")) return false;
+          v.dispatch({
+            changes: { from, to, insert: "[]()" },
+            selection: { anchor: from + 1 },
+            userEvent: "input.type",
+          });
+          return true;
         }
 
         return false;
