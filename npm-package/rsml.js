@@ -64,6 +64,11 @@ code-mix, accent, mispronunciation, entity,
   padding: 1px 4px;
   border-radius: 4px;
   font-size: 0.95em;
+  /* Don't inherit the container's 2.1 line-height — that would make each
+     chip's box tall vertically. Chips stay compact; the extra breathing
+     room lives in the space between wrapped lines of chips. */
+  line-height: 1.35;
+  vertical-align: baseline;
   /* Prevent internal word-wrap so a chip stays on a single line where
      possible; overrideable per-category if very long content is expected. */
   white-space: nowrap;
