@@ -193,8 +193,13 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .rsml-span.rsml-span-falling-pitch::before {
   content: "↘\\00a0"; color:#06c; font-weight: 700;
 }
+/* Whitespace-only literal runs between block-level tags (typically the
+   space or newline between consecutive speaker turns) collapse so they
+   don't render as a blank line. */
+.rsml-lit-ws { white-space: normal; }
 /* Speaker: the label sits on its own line before the turn content. */
-.rsml-speaker { background: transparent; border: none; padding: 0; border-radius: 0; display: block; }
+.rsml-speaker { background: transparent; border: none; padding: 0; border-radius: 0; display: block; margin-top: 10px; }
+.rsml-speaker:first-child { margin-top: 0; }
 .rsml-speaker-label {
   display: block;
   width: fit-content;
@@ -1157,7 +1162,11 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           .replace(/&/g, "&amp;")
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
-        out += `<span class="rsml-lit" data-src="${literalStart}:${end}">${esc}</span>`;
+        // Whitespace-only runs collapse at block-level boundaries (between
+        // speaker turns, mostly) so they don't render as extra blank lines.
+        const wsOnly = !/\S/.test(chunk);
+        const cls = wsOnly ? "rsml-lit rsml-lit-ws" : "rsml-lit";
+        out += `<span class="${cls}" data-src="${literalStart}:${end}">${esc}</span>`;
         literalStart = -1;
       };
 
