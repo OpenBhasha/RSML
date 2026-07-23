@@ -189,6 +189,19 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   text-transform: uppercase;
 }
 .rsml-span-orphan { outline:1px dashed #d33; }
+/* Unpaired @X-start / @X-end / &sN-start / &sN-end — a visible red-dashed
+   chip in the render pane so annotators can spot broken pairs. */
+.rsml-orphan {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(220, 53, 69, 0.08);
+  border: 1px dashed #dc3545;
+  color: #a01818;
+  font-weight: 600;
+  font-size: 0.9em;
+}
+.rsml-orphan::before { content: "⚠ "; }
 /* Verbatim / normalized layer switch — nested tags inherit the mode via CSS. */
 .rsml-content .rsml-verbatim,
 .rsml-content .rsml-normalized { display: inline; }
@@ -522,6 +535,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       let i = 0;
       const n = text.length;
       let literalStart = -1;
+      const orphans = this._findOrphans(text);
       const flushLiteral = (end) => {
         if (literalStart === -1) return;
         const chunk = text.slice(literalStart, end);
@@ -579,7 +593,11 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           const at = /^@([\w-]+)/.exec(text.slice(i));
           if (at) {
             flushLiteral(i);
-            out += this._buildAtToken(at[1], i, i + at[0].length);
+            if (orphans.has(i)) {
+              out += this._buildOrphanChip(at[0], i, i + at[0].length);
+            } else {
+              out += this._buildAtToken(at[1], i, i + at[0].length);
+            }
             i += at[0].length;
             continue;
           }
@@ -590,7 +608,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           const sp = /^&(s\d+)-(start|end)(?![\w-])/.exec(text.slice(i));
           if (sp) {
             flushLiteral(i);
-            if (sp[2] === "start") {
+            if (orphans.has(i)) {
+              out += this._buildOrphanChip(sp[0], i, i + sp[0].length);
+            } else if (sp[2] === "start") {
               const num = sp[1].slice(1);
               out += `<span class="rsml-speaker" data-speaker="${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">`
                    + `<span class="rsml-speaker-label" data-bs-toggle="tooltip" data-bs-title="speaker turn: ${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">Speaker ${this._esc(num)}:</span>`;
@@ -608,6 +628,45 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       }
       flushLiteral(i);
       return out;
+    }
+
+    // Returns a Set of source positions for every `@X-start`, `@X-end`,
+    // `&sN-start`, `&sN-end` token that has no matching sibling. Pairs are
+    // matched name-by-name with LIFO stacks — the first `-start` of a given
+    // base pairs with the first `-end` of the same base, etc. Anything left
+    // in a stack after the scan (or a `-end` that hits an empty stack) is
+    // reported as an orphan.
+    _findOrphans(text) {
+      const orphans = new Set();
+      const stacks = new Map();
+      const re = /@([\w-]+?)(-start|-end)(?![\w-])|&(s\d+)-(start|end)(?![\w-])/g;
+      let m;
+      while ((m = re.exec(text))) {
+        const name = m[1] || m[3];
+        const role = m[2] ? m[2].slice(1) : m[4];
+        const pos = m.index;
+        if (role === "start") {
+          if (!stacks.has(name)) stacks.set(name, []);
+          stacks.get(name).push(pos);
+        } else {
+          const stk = stacks.get(name);
+          if (stk && stk.length) stk.pop();
+          else orphans.add(pos);
+        }
+      }
+      for (const positions of stacks.values()) {
+        for (const p of positions) orphans.add(p);
+      }
+      return orphans;
+    }
+
+    _buildOrphanChip(rawToken, srcStart, srcEnd) {
+      const role = rawToken.endsWith("-start") ? "start" : "end";
+      const missing = role === "start" ? "-end" : "-start";
+      return `<span class="rsml-orphan"`
+           + ` data-src="${srcStart}:${srcEnd}"`
+           + ` data-bs-toggle="tooltip" data-bs-title="orphan ${role}: no matching ${missing}">`
+           + `${this._esc(rawToken)}</span>`;
     }
 
     // Returns the index of the balanced closing bracket, or -1 if unbalanced.
