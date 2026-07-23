@@ -1466,6 +1466,39 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         icons: false,
       });
 
+      // ----- Wrap-selection-with-prefix handler -----
+      // When the user types `!`, `#`, `$`, or `[` while text is selected,
+      // wrap that selection as the verbatim slot of the corresponding tag
+      // and drop the caret in the right place for the next step.
+      const wrapPrefixes = new Set(["!", "#", "$", "["]);
+      const wrapHandler = view.EditorView.inputHandler.of((v, from, to, insert) => {
+        if (!wrapPrefixes.has(insert)) return false;
+        if (from === to) return false; // no selection — fall through
+        const selected = v.state.sliceDoc(from, to);
+        let scaffold, caret;
+        if (insert === "[") {
+          // Bare mispronunciation: [SELECTION]()  — caret in the normalized slot.
+          scaffold = `[${selected}]()`;
+          caret = from + 1 + selected.length + 2; // just after `(`
+        } else {
+          // Prefixed form: X[SELECTION]() — caret right after X so the user
+          // can type (or pick) the type name; the scaffold-aware `apply`
+          // below will preserve the wrapped selection.
+          scaffold = `${insert}[${selected}]()`;
+          caret = from + 1; // right after the prefix char
+        }
+        v.dispatch({
+          changes: { from, to, insert: scaffold },
+          selection: { anchor: caret },
+          userEvent: "input.type",
+        });
+        // Open the completion popup on the next tick so it sees the new state.
+        if (insert !== "[") {
+          setTimeout(() => autocomplete.startCompletion(v), 0);
+        }
+        return true;
+      });
+
       // ----- Theme: match the textarea's Bootstrap form-control look -----
       const cs = getComputedStyle(ta);
       const editorFont = this.opts.editorFontFamily || cs.fontFamily;
@@ -1492,6 +1525,68 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         ".cm-scroller": { fontFamily: "inherit", lineHeight: cs.lineHeight },
         ".cm-content": { padding: `${cs.paddingTop} ${cs.paddingRight}` },
         ".cm-line": { padding: 0 },
+
+        // Autocomplete popup — mirror the pre-CM6 `.rsml-suggestions` look.
+        ".cm-tooltip.cm-tooltip-autocomplete": {
+          background: "#fff",
+          border: "1px solid #ccc",
+          borderRadius: "6px",
+          boxShadow: "0 6px 14px rgba(0,0,0,.15)",
+          overflow: "hidden",
+          fontFamily: `"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`,
+          fontSize: "0.9rem",
+          color: "#222",
+          animation: "rsmlFadeIn .12s ease-in",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul": {
+          minWidth: "160px",
+          maxWidth: "320px",
+          maxHeight: "200px",
+          overflowY: "auto",
+          padding: "4px 0",
+          margin: 0,
+          fontFamily: "inherit",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+          padding: "5px 10px",
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          lineHeight: "1.35",
+          borderRadius: 0,
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul > li:hover": {
+          background: "#0d6efd",
+          color: "#fff",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+          background: "#0d6efd",
+          color: "#fff",
+        },
+        ".cm-completionLabel": {
+          fontFamily: "inherit",
+        },
+        ".cm-completionDetail": {
+          fontStyle: "normal",
+          color: "#777",
+          fontSize: "0.85em",
+          marginLeft: "8px",
+          fontFamily: "inherit",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail, .cm-tooltip.cm-tooltip-autocomplete > ul > li:hover .cm-completionDetail": {
+          color: "rgba(255,255,255,0.85)",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul::-webkit-scrollbar": {
+          width: "6px",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul::-webkit-scrollbar-thumb": {
+          background: "#bbb",
+          borderRadius: "3px",
+        },
+        ".cm-tooltip.cm-tooltip-autocomplete > ul::-webkit-scrollbar-thumb:hover": {
+          background: "#999",
+        },
       });
 
       const startState = state.EditorState.create({
@@ -1501,6 +1596,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           view.EditorView.lineWrapping,
           commands.history(),
           rsmlComplete,
+          wrapHandler,
           view.keymap.of([
             ...commands.defaultKeymap,
             ...commands.historyKeymap,
@@ -1714,39 +1810,72 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       if (!trigger) return null;
       const prefix = trigger.text[0];
       let options = [];
-      const wrapApply = (insert, cursorRel) =>
+
+      // Scaffold-aware apply for the bracket-form prefixes (!, #, $).
+      // If a `[verbatim]()` (or `[verbatim](normalized)`) already sits
+      // immediately after the trigger — the shape produced when the user
+      // wrapped a selection with the prefix — insert only the type name
+      // and land the caret at the end of the verbatim slot.
+      // Otherwise, insert the full scaffold and drop the caret inside `[`.
+      const bracketApply = (typeSegment) =>
+        (view, completion, from, to) => {
+          const doc = view.state.doc;
+          const after = doc.sliceString(to, Math.min(to + 500, doc.length));
+          const scaf = /^\[([^\]]*)\](\([^)]*\))?/.exec(after);
+          if (scaf) {
+            // Preserve existing wrapped selection.
+            const verbatim = scaf[1];
+            view.dispatch({
+              changes: { from, to, insert: typeSegment },
+              // caret just before the `]` (end of verbatim)
+              selection: { anchor: from + typeSegment.length + 1 + verbatim.length },
+              userEvent: "input.complete",
+            });
+          } else {
+            const insert = `${typeSegment}[]()`;
+            view.dispatch({
+              changes: { from, to, insert },
+              // caret between `[` and `]`
+              selection: { anchor: from + typeSegment.length + 1 },
+              userEvent: "input.complete",
+            });
+          }
+        };
+
+      const simpleApply = (insert, cursorRel) =>
         (view, completion, from, to) => {
           view.dispatch({
             changes: { from, to, insert },
             selection: { anchor: from + cursorRel },
           });
         };
+
       switch (prefix) {
         case "@":
           options = this.opts.tags.map((t) => ({
             label: t,
-            apply: wrapApply(t + " ", t.length + 1),
+            apply: simpleApply(t + " ", t.length + 1),
           }));
           break;
         case "#":
           options = Object.keys(this.opts.entities).map((k) => ({
             label: `#${k}`,
             detail: this.opts.entities[k],
-            apply: wrapApply(`#${k}[]()`, `#${k}[`.length),
+            apply: bracketApply(`#${k}`),
           }));
           break;
         case "!":
           options = Object.keys(this.opts.languages).map((c) => ({
             label: `!${c}`,
             detail: this.opts.languages[c],
-            apply: wrapApply(`!${c}[]()`, `!${c}[`.length),
+            apply: bracketApply(`!${c}`),
           }));
           break;
         case "$":
           options = [{
             label: "$ (accent)",
             detail: "accent-name is free-form",
-            apply: wrapApply(`$[]()`, `$[`.length),
+            apply: bracketApply(`$`),
           }];
           break;
         case "&":
@@ -1755,7 +1884,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             return {
               label: `&${clean}`,
               detail: s.includes("(") ? "new speaker" : null,
-              apply: wrapApply(`&${clean} `, clean.length + 2),
+              apply: simpleApply(`&${clean} `, clean.length + 2),
             };
           });
           break;
