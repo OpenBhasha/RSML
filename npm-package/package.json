@@ -1,7 +1,7 @@
 {
   "name": "rsml",
-  "version": "3.1.0",
-  "description": "Rich Speech Markup Language annotation widget for speech transcription and linguistic markup.",
+  "version": "3.1.1",
+  "description": "Rich Speech Markup Language annotation toolkit for rich transcription of speech.",
   "main": "rsml.js",
   "module": "rsml.esm.js",
   "type": "module",
