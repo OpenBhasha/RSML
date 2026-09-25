@@ -116,3 +116,52 @@ export default function App() {
   );
 }
 ```
+
+### Extending the vocabulary
+
+Every configurable tag/entity/language list can be grown after construction
+with `add(category, value, label)` / `remove(category, value)` — an
+already-open editor picks up the change immediately, with no re-render or
+retyping needed.
+
+```js
+annotator.add("hesitations", "@meh");
+annotator.add("entities", "PRODUCT", "Product Name");
+annotator.add("languages", "kok", "Konkani");
+annotator.remove("entities", "PRODUCT");
+```
+
+`category` is one of:
+
+| category | what `value` is | what `label` is |
+|---|---|---|
+| `hesitations` | an `@tag` (with or without the `@`) | — |
+| `isolatedParalinguistics` | an `@tag` | — |
+| `isolatedOther` | an `@tag` | — |
+| `disfluencySpans` | a span base name (no `@`, no `-start`/`-end`) | — |
+| `paralinguisticSpans` | a span base name | — |
+| `prosodySpans` | a span base name | — |
+| `entities` | a `#`-prefixed entity type code | display label (optional) |
+| `languages` | a `!`-prefixed language code | display label (optional) |
+| `dialects` | a `$$`-prefixed dialect code | display label (optional) |
+| `domains` | a `!!`-prefixed domain code | display label (optional) |
+
+`add`/`remove` return `true` if they changed something, `false` for a no-op
+(e.g. removing a name that wasn't registered). They throw on an unknown
+`category`, an invalid/empty value, or — for the `@tag` and span families,
+which each share one namespace across their sibling categories — a name
+already registered under a *different* category in that family.
+
+### Dialect and domain markup
+
+Alongside `!` (code-mix / language) and `#` (entity), two more bracket
+prefixes are available, each backed by its own vocabulary registered via
+`add`/`remove` above:
+
+- **`$$` — dialect**: `$$TG[వస్తున్నా](వస్తున్నాను)` marks a phrase as a
+  specific dialect (e.g. `add("dialects", "TG", "Telangana Telugu")`).
+- **`!!` — domain**: `!!MED[BP](రక్తపోటు)` marks a phrase as belonging to a
+  specific domain/register (e.g. `add("domains", "MED", "Medical")`).
+
+Like `!`/`#`/`$`, the type code after the prefix is optional — `$$[…](…)`
+and `!![…](…)` render as "unspecified" dialect/domain.

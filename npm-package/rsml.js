@@ -31,7 +31,7 @@
 .rsml-content > * { line-height: inherit; }
 @keyframes rsmlFadeIn { from { opacity:0; transform: translateY(-3px);} to { opacity:1; transform:none;} }
 
-code-mix, accent, mispronunciation, entity,
+code-mix, accent, mispronunciation, entity, dialect, domain,
 .rsml-span, .rsml-at {
   /* inline-block keeps a chip atomic: if it doesn't fit at the current
      line position it moves to the next line as a whole unit, never split. */
@@ -52,6 +52,8 @@ code-mix { background-color:#c8f7ff; border:1px solid #7fd7ea; }
 accent { background-color:#e2caff; border:1px solid #c18eff; }
 mispronunciation { background-color:#ffd1a8; border:1px solid #ffae70; }
 entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; position:relative; cursor:help; }
+dialect { background-color:#dbe4ff; border:1px solid #8fa8f5; }
+domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
 /* Span-pair categories. */
 .rsml-disfluency { background-color:#ffe0b3; border:1px solid #ffb84d; }
 .rsml-paralinguistic { background-color:#e6ffb3; border:1px solid #b3d977; }
@@ -130,6 +132,8 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 .tok-code-mix         { color:#0e8fbf; }   /* teal      — ! */
 .tok-entity           { color:#b8860b; }   /* gold      — # */
 .tok-accent           { color:#7a3fbf; }   /* violet    — $ */
+.tok-dialect          { color:#3949ab; }   /* indigo    — $$ */
+.tok-domain           { color:#00695c; }   /* deep teal — !! */
 .tok-mispronunciation { color:#c62828; }   /* red       — bare [](  ) */
 /* Isolated @-tokens */
 .tok-at-hesitation     { color:#8a7a10; }  /* olive     — @umm @uhh @hmm … */
@@ -323,7 +327,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   ];
 
   const DEFAULT_ISOLATED_OTHER = [
-    "@silence", "@unintelligible", "@stutter-block",
+    "@silence", "@unintelligible", "@stutter-block", "@pause", "@short-pause", "@long-pause",
   ];
 
   // Span pairs written as @<name>-start ... @<name>-end.
@@ -336,7 +340,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
   ];
 
   const DEFAULT_PROSODY_SPANS = [
-    "emphasis", "falling-pitch", "raising-pitch",
+    "emphasis", "falling-pitch", "raising-pitch", "fast-speech", "slow-speech",
   ];
 
 
@@ -368,16 +372,48 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     brx:"Bodo", sa:"Sanskrit",
   };
 
+  // Dialect (prefix `$$`) and domain (prefix `!!`) ship with no default
+  // vocabulary — unlike languages/entities there's no universal taxonomy to
+  // bundle, so opts.dialects / opts.domains start empty and are populated
+  // via add("dialects", ...) / add("domains", ...).
+
+  // Drives the generic add()/remove() dispatch below: `category` is always
+  // an opts property name, `kind` picks which shared helper owns it.
+  const CATEGORY_SPECS = {
+    hesitations:             { kind: "isolated", tagCategory: "hesitation" },
+    isolatedParalinguistics: { kind: "isolated", tagCategory: "paralinguistic" },
+    isolatedOther:           { kind: "isolated", tagCategory: "other" },
+    disfluencySpans:         { kind: "span", tagCategory: "disfluency" },
+    paralinguisticSpans:     { kind: "span", tagCategory: "paralinguistic" },
+    prosodySpans:            { kind: "span", tagCategory: "prosody" },
+    entities:                { kind: "map" },
+    languages:               { kind: "map", lowercaseKey: true },
+    dialects:                { kind: "map" },
+    domains:                 { kind: "map" },
+  };
+
   // ---------- Core Class ----------
   class RSMLAnnotator {
     /**
      * @param {Object} opts
      * @param {HTMLTextAreaElement|string} opts.textarea - element or selector
      * @param {HTMLElement|string} opts.output - element or selector
-     * @param {Array<string>} [opts.tags]
+     * @param {Array<string>} [opts.hesitations]
+     * @param {Array<string>} [opts.isolatedParalinguistics]
+     * @param {Array<string>} [opts.isolatedOther]
+     * @param {Array<string>} [opts.disfluencySpans]
+     * @param {Array<string>} [opts.paralinguisticSpans]
+     * @param {Array<string>} [opts.prosodySpans]
      * @param {Object} [opts.entities]
      * @param {Object} [opts.languages]
+     * @param {Object} [opts.dialects] - code -> label, matched by the `$$` prefix
+     * @param {Object} [opts.domains] - code -> label, matched by the `!!` prefix
      * @param {boolean} [opts.demoText=false]
+     *
+     * Every list/map above can also be grown after construction with
+     * add(category, value, label) / remove(category, value) — see the
+     * "Public API: dynamic registration" section below. `opts.tags` is
+     * derived automatically and should not be passed in.
      */
     constructor(opts) {
       injectCoreStyles();
@@ -393,33 +429,14 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           prosodySpans: DEFAULT_PROSODY_SPANS.slice(),
           entities: Object.assign({}, DEFAULT_ENTITY_MAP),
           languages: Object.assign({}, DEFAULT_LANGS),
+          dialects: {},
+          domains: {},
           demoText: false,
         },
         opts || {}
       );
 
-      // Cache category lookup for span base names.
-      this._spanCategory = new Map();
-      for (const b of this.opts.disfluencySpans)     this._spanCategory.set(b, "disfluency");
-      for (const b of this.opts.paralinguisticSpans) this._spanCategory.set(b, "paralinguistic");
-      for (const b of this.opts.prosodySpans)        this._spanCategory.set(b, "prosody");
-
-      // Cache category lookup for isolated @-tokens (with and without the '@' prefix).
-      this._atCategory = new Map();
-      const stripAt = (t) => (t[0] === "@" ? t.slice(1) : t);
-      for (const t of this.opts.hesitations)              this._atCategory.set(stripAt(t), "hesitation");
-      for (const t of this.opts.isolatedParalinguistics)  this._atCategory.set(stripAt(t), "paralinguistic");
-      for (const t of this.opts.isolatedOther)            this._atCategory.set(stripAt(t), "other");
-
-      // Full @-tag completion list: isolated tokens plus both ends of every span pair.
-      const spanTokens = [];
-      for (const b of this.opts.disfluencySpans.concat(this.opts.paralinguisticSpans, this.opts.prosodySpans)) {
-        spanTokens.push(`@${b}-start`, `@${b}-end`);
-      }
-      this.opts.tags = this.opts.hesitations
-        .concat(this.opts.isolatedParalinguistics)
-        .concat(this.opts.isolatedOther)
-        .concat(spanTokens);
+      this._rebuildTagCaches();
 
       this.textarea = $(this.opts.textarea);
       this.output = $(this.opts.output);
@@ -497,6 +514,167 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
     }
     redo() {
       if (this.view && this._cm) return this._cm.commands.redo(this.view);
+    }
+
+    // ---------- Public API: dynamic registration ----------
+    // Register or unregister a value in one of the configured vocabularies.
+    //   category: "hesitations" | "isolatedParalinguistics" | "isolatedOther"
+    //           | "disfluencySpans" | "paralinguisticSpans" | "prosodySpans"
+    //           | "entities" | "languages" | "dialects" | "domains"
+    //   value:    the @tag / span base name / map code to add or remove
+    //   label:    map categories only (entities/languages/dialects/domains) —
+    //             the display label; defaults to `value` itself if omitted
+    // Returns true if state changed, false for a no-op remove (nothing by
+    // that name was registered). Throws on an unknown category, an invalid
+    // value, or — for the @tag and span-pair families, which each share one
+    // flat namespace across their sibling categories — a name already
+    // registered under a *different* category in that family. An
+    // already-mounted editor reflects the change immediately; no re-render
+    // or retyping needed.
+    add(category, value, label) {
+      const spec = CATEGORY_SPECS[category];
+      if (!spec) {
+        throw new Error(
+          `[RSMLAnnotator] Unknown category: "${category}". Expected one of: ${Object.keys(CATEGORY_SPECS).join(", ")}`
+        );
+      }
+      if (spec.kind === "isolated") return this._addIsolatedTag(category, spec.tagCategory, value);
+      if (spec.kind === "span")     return this._addSpanName(category, spec.tagCategory, value);
+      return this._setMapEntry(category, value, label, spec.lowercaseKey);
+    }
+    remove(category, value) {
+      const spec = CATEGORY_SPECS[category];
+      if (!spec) {
+        throw new Error(
+          `[RSMLAnnotator] Unknown category: "${category}". Expected one of: ${Object.keys(CATEGORY_SPECS).join(", ")}`
+        );
+      }
+      if (spec.kind === "isolated") return this._removeIsolatedTag(category, value);
+      if (spec.kind === "span")     return this._removeSpanName(category, value);
+      return this._deleteMapEntry(category, value, spec.lowercaseKey);
+    }
+
+    // ---------- Internal: dynamic registration helpers ----------
+    // Rebuilds every cache derived from the opts lists/maps above. Called
+    // once at construction and again after any add()/remove().
+    _rebuildTagCaches() {
+      // Cache category lookup for span base names.
+      this._spanCategory = new Map();
+      for (const b of this.opts.disfluencySpans)     this._spanCategory.set(b, "disfluency");
+      for (const b of this.opts.paralinguisticSpans) this._spanCategory.set(b, "paralinguistic");
+      for (const b of this.opts.prosodySpans)        this._spanCategory.set(b, "prosody");
+
+      // Cache category lookup for isolated @-tokens (with and without the '@' prefix).
+      this._atCategory = new Map();
+      const stripAt = (t) => (t[0] === "@" ? t.slice(1) : t);
+      for (const t of this.opts.hesitations)              this._atCategory.set(stripAt(t), "hesitation");
+      for (const t of this.opts.isolatedParalinguistics)  this._atCategory.set(stripAt(t), "paralinguistic");
+      for (const t of this.opts.isolatedOther)            this._atCategory.set(stripAt(t), "other");
+
+      // Full @-tag completion list: isolated tokens plus both ends of every span pair.
+      const spanTokens = [];
+      for (const b of this.opts.disfluencySpans.concat(this.opts.paralinguisticSpans, this.opts.prosodySpans)) {
+        spanTokens.push(`@${b}-start`, `@${b}-end`);
+      }
+      this.opts.tags = this.opts.hesitations
+        .concat(this.opts.isolatedParalinguistics)
+        .concat(this.opts.isolatedOther)
+        .concat(spanTokens);
+    }
+
+    // Re-render the output pane and, if CM6 is mounted, force its highlight/
+    // warning decorations to recompute (they otherwise only refresh on a
+    // doc change — see the `_cmRefreshEffect` dispatched here, defined
+    // alongside `decoField` in `_mountCM`).
+    _refreshAfterConfigChange() {
+      this._render();
+      if (this.view && this._cmRefreshEffect) {
+        this.view.dispatch({ effects: this._cmRefreshEffect.of(null) });
+      }
+      this._updateStatus();
+    }
+
+    _addIsolatedTag(listKey, category, rawTag) {
+      if (typeof rawTag !== "string" || !rawTag.trim()) {
+        throw new Error(`[RSMLAnnotator] add("${listKey}", ...) needs a non-empty tag name.`);
+      }
+      const bare = rawTag[0] === "@" ? rawTag.slice(1) : rawTag;
+      if (!/^[\w-]+$/.test(bare)) {
+        throw new Error(
+          `[RSMLAnnotator] Invalid tag name "@${bare}" — only letters, numbers, "_" and "-" are allowed.`
+        );
+      }
+      const existingCategory = this._atCategory.get(bare);
+      if (existingCategory && existingCategory !== category) {
+        throw new Error(
+          `[RSMLAnnotator] "@${bare}" is already registered as a ${existingCategory} tag. Remove it first or choose a different name.`
+        );
+      }
+      const stored = `@${bare}`;
+      if (this.opts[listKey].includes(stored)) return false;
+      this.opts[listKey].push(stored);
+      this._rebuildTagCaches();
+      this._refreshAfterConfigChange();
+      return true;
+    }
+
+    _removeIsolatedTag(listKey, rawTag) {
+      if (typeof rawTag !== "string") return false;
+      const bare = rawTag[0] === "@" ? rawTag.slice(1) : rawTag;
+      const idx = this.opts[listKey].indexOf(`@${bare}`);
+      if (idx === -1) return false;
+      this.opts[listKey].splice(idx, 1);
+      this._rebuildTagCaches();
+      this._refreshAfterConfigChange();
+      return true;
+    }
+
+    _addSpanName(listKey, category, base) {
+      if (typeof base !== "string" || !/^[\w-]+$/.test(base)) {
+        throw new Error(
+          `[RSMLAnnotator] Invalid span name "${base}" — only letters, numbers, "_" and "-" are allowed.`
+        );
+      }
+      const existingCategory = this._spanCategory.get(base);
+      if (existingCategory && existingCategory !== category) {
+        throw new Error(
+          `[RSMLAnnotator] "${base}" is already registered as a ${existingCategory} span. Remove it first or choose a different name.`
+        );
+      }
+      if (this.opts[listKey].includes(base)) return false;
+      this.opts[listKey].push(base);
+      this._rebuildTagCaches();
+      this._refreshAfterConfigChange();
+      return true;
+    }
+
+    _removeSpanName(listKey, base) {
+      if (typeof base !== "string") return false;
+      const idx = this.opts[listKey].indexOf(base);
+      if (idx === -1) return false;
+      this.opts[listKey].splice(idx, 1);
+      this._rebuildTagCaches();
+      this._refreshAfterConfigChange();
+      return true;
+    }
+
+    _setMapEntry(mapKey, code, label, lowercaseKey) {
+      if (typeof code !== "string" || !code.trim()) {
+        throw new Error(`[RSMLAnnotator] add("${mapKey}", ...) needs a non-empty code.`);
+      }
+      const key = lowercaseKey ? code.toLowerCase() : code;
+      this.opts[mapKey][key] = label == null || label === "" ? key : label;
+      this._refreshAfterConfigChange();
+      return true;
+    }
+
+    _deleteMapEntry(mapKey, code, lowercaseKey) {
+      if (typeof code !== "string") return false;
+      const key = lowercaseKey ? code.toLowerCase() : code;
+      if (!(key in this.opts[mapKey])) return false;
+      delete this.opts[mapKey][key];
+      this._refreshAfterConfigChange();
+      return true;
     }
 
     // ---------- Internal: Events ----------
@@ -630,7 +808,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
 
       while (i < n) {
         // Prefixed bracket form:  ! # $  + optional type + [v](n)
-        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        const pm = /^(\$\$|!!|[!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
         if (pm) {
           const prefix = pm[1];
           const type = pm[2] || "";
@@ -772,21 +950,21 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       while (i < n) {
         // Prefix immediately followed by a close bracket — always malformed
         // (`!)`, `#]`, `$}`, etc). No legitimate use.
-        const pmClose = /^([!#$])[\])}]/.exec(text.slice(i));
+        const pmClose = /^(\$\$|!!|[!#$])[\])}]/.exec(text.slice(i));
         if (pmClose) {
           errors.push({
-            start: i, end: i + 2,
+            start: i, end: i + pmClose[0].length,
             kind: "stray-bracket",
             message: `Stray \`${pmClose[0]}\` — a prefix must be followed by \`[verbatim](normalized)\``,
           });
-          i += 2;
+          i += pmClose[0].length;
           continue;
         }
 
         // Prefix followed by `(` instead of `[` — user typed `!en(foo)` etc.
         // Flag it before the normal prefix-`[` match so we don't drop through
         // to per-character walking.
-        const pmParen = /^([!#$])([A-Za-z][\w-]*)?\(/.exec(text.slice(i));
+        const pmParen = /^(\$\$|!!|[!#$])([A-Za-z][\w-]*)?\(/.exec(text.slice(i));
         if (pmParen) {
           const openParen = i + pmParen[0].length - 1;
           const closeParen = this._matchBracket(text, openParen, "(", ")");
@@ -801,7 +979,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         }
 
         // Prefix bracket form
-        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        const pm = /^(\$\$|!!|[!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
         if (pm) {
           const prefix = pm[1];
           const type = pm[2] || "";
@@ -846,19 +1024,35 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
               message: "Nested tag inside `(normalized)`",
             });
           }
-          // Warn on unknown type / lang (only if the user actually typed one).
+          // Warn on unknown type / lang / dialect / domain (only if the
+          // user actually typed one). Offsets use prefix.length so this
+          // works for both single-char (!, #) and doubled ($$, !!) prefixes.
           if (type) {
+            const typeStart = i + prefix.length;
+            const typeEnd = typeStart + type.length;
             if (prefix === "#" && !this.opts.entities[type]) {
               warnings.push({
-                start: i + 1, end: i + 1 + type.length,
+                start: typeStart, end: typeEnd,
                 kind: "unknown-entity",
                 message: `Unknown entity type: \`#${type}\``,
               });
             } else if (prefix === "!" && !this.opts.languages[type.toLowerCase()]) {
               warnings.push({
-                start: i + 1, end: i + 1 + type.length,
+                start: typeStart, end: typeEnd,
                 kind: "unknown-language",
                 message: `Unknown language code: \`!${type}\``,
+              });
+            } else if (prefix === "$$" && !this.opts.dialects[type]) {
+              warnings.push({
+                start: typeStart, end: typeEnd,
+                kind: "unknown-dialect",
+                message: `Unknown dialect code: \`$$${type}\``,
+              });
+            } else if (prefix === "!!" && !this.opts.domains[type]) {
+              warnings.push({
+                start: typeStart, end: typeEnd,
+                kind: "unknown-domain",
+                message: `Unknown domain code: \`!!${type}\``,
               });
             }
             // $ accents are free-form; no warning.
@@ -1079,6 +1273,8 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         case "!": return "code-mix";
         case "#": return "entity";
         case "$": return "accent";
+        case "$$": return "dialect";
+        case "!!": return "domain";
         case "[": return "mispronunciation";
       }
       return "span";
@@ -1111,6 +1307,24 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         case "$": {
           title = `accent: ${type || "unspecified"}`;
           dataAttrs = ` data-accent="${this._esc(type)}"`;
+          break;
+        }
+        case "$$": {
+          const t = type.trim();
+          const label = t
+            ? (this.opts.dialects[t] || "Unknown Dialect")
+            : "Dialect";
+          title = `dialect: ${label}`;
+          dataAttrs = ` data-dialect="${this._esc(t)}"`;
+          break;
+        }
+        case "!!": {
+          const t = type.trim();
+          const label = t
+            ? (this.opts.domains[t] || "Unknown Domain")
+            : "Domain";
+          title = `domain: ${label}`;
+          dataAttrs = ` data-domain="${this._esc(t)}"`;
           break;
         }
         case "[": {
@@ -1195,9 +1409,11 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
         case "stray-prefix":      return "! may only trail a word, stand alone, or repeat — not prefix another word.";
         case "malformed-speaker": return "Speaker tag must be &sN-start or &sN-end.";
         case "nested-tag":        return "Nested tags aren't allowed. Split the tag apart or move the inner tag out.";
-        case "unknown-entity":    return "Not in configured entity types. Add it to opts.entities or use a known type.";
-        case "unknown-language":  return "Not in configured languages. Add it to opts.languages or use a known code.";
-        case "unknown-tag":       return "Not in configured @-tag lists. Add it to opts.hesitations / isolatedParalinguistics / isolatedOther, or use a known name.";
+        case "unknown-entity":    return "Not in configured entity types. Call add(\"entities\", type, label) or use a known type.";
+        case "unknown-language":  return "Not in configured languages. Call add(\"languages\", code, label) or use a known code.";
+        case "unknown-dialect":   return "Not in configured dialects. Call add(\"dialects\", code, label) or use a known code.";
+        case "unknown-domain":    return "Not in configured domains. Call add(\"domains\", code, label) or use a known code.";
+        case "unknown-tag":       return "Not in configured @-tag lists. Call add(\"hesitations\" | \"isolatedParalinguistics\" | \"isolatedOther\", name) or use a known name.";
         default:                  return "";
       }
     }
@@ -1245,6 +1461,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       const self = this;
       const ta = this.textarea;
 
+      // Dispatched (with no doc change) by _refreshAfterConfigChange() so a
+      // running editor picks up add()/remove() calls without a keystroke.
+      this._cmRefreshEffect = state.StateEffect.define();
+
       // ----- Highlight decorations (StateField) -----
       const buildDeco = (doc) => {
         const text = doc.toString();
@@ -1271,7 +1491,9 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       const decoField = state.StateField.define({
         create: (st) => buildDeco(st.doc),
         update: (deco, tr) =>
-          tr.docChanged ? buildDeco(tr.state.doc) : deco.map(tr.changes),
+          (tr.docChanged || tr.effects.some((e) => e.is(self._cmRefreshEffect)))
+            ? buildDeco(tr.state.doc)
+            : deco.map(tr.changes),
         provide: (f) => view.EditorView.decorations.from(f),
       });
 
@@ -1554,7 +1776,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       const n = text.length;
       const orphans = this._findOrphans(text);
       while (i < n) {
-        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        const pm = /^(\$\$|!!|[!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
         if (pm) {
           const prefix = pm[1];
           const openBracket = i + pm[0].length - 1;
@@ -1562,8 +1784,10 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
           if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
             const closeParen = this._matchBracket(text, closeBracket + 1, "(", ")");
             if (closeParen !== -1) {
-              const cat = prefix === "!" ? "code-mix"
-                        : prefix === "#" ? "entity" : "accent";
+              const cat = prefix === "$$" ? "dialect"
+                        : prefix === "!!" ? "domain"
+                        : prefix === "!"  ? "code-mix"
+                        : prefix === "#"  ? "entity" : "accent";
               const cls = `tok-${cat}`;
               add(i, openBracket + 1, cls);
               add(closeBracket, closeBracket + 2, cls);
@@ -1636,7 +1860,7 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       const n = text.length;
       const pushGroup = (ranges, key) => groups.push({ ranges, key });
       while (i < n) {
-        const pm = /^([!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
+        const pm = /^(\$\$|!!|[!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
         if (pm) {
           const openBracket = i + pm[0].length - 1;
           const closeBracket = this._matchBracket(text, openBracket, "[", "]");
@@ -1726,11 +1950,14 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
       return viewMod.Decoration.set(marks);
     }
 
-    // CM completion source for @ # ! $ & prefixes.
+    // CM completion source for @ # ! $ & prefixes, plus the doubled $$
+    // (dialect) and !! (domain) prefixes.
     _cmComplete(ctx) {
-      const trigger = ctx.matchBefore(/[@#!$&][\w-]*/);
+      const trigger = ctx.matchBefore(/\$\$[\w-]*|!![\w-]*|[@#!$&][\w-]*/);
       if (!trigger) return null;
-      const prefix = trigger.text[0];
+      const prefix = trigger.text.startsWith("$$") ? "$$"
+                   : trigger.text.startsWith("!!") ? "!!"
+                   : trigger.text[0];
       let options = [];
 
       // Scaffold-aware apply for the bracket-form prefixes (!, #, $).
@@ -1816,6 +2043,36 @@ entity { background-color:#fff7a8; border:1px solid #e6db65; color:#444; positio
             apply: bracketApply(`$`),
             boost: 1,
           }];
+          break;
+        case "$$":
+          options = [
+            {
+              label: "$$ (unspecified dialect)",
+              detail: "dialect — code left blank",
+              apply: bracketApply(`$$`),
+              boost: 1,
+            },
+            ...Object.keys(this.opts.dialects).map((k) => ({
+              label: `$$${k}`,
+              detail: this.opts.dialects[k],
+              apply: bracketApply(`$$${k}`),
+            })),
+          ];
+          break;
+        case "!!":
+          options = [
+            {
+              label: "!! (unspecified domain)",
+              detail: "domain — code left blank",
+              apply: bracketApply(`!!`),
+              boost: 1,
+            },
+            ...Object.keys(this.opts.domains).map((k) => ({
+              label: `!!${k}`,
+              detail: this.opts.domains[k],
+              apply: bracketApply(`!!${k}`),
+            })),
+          ];
           break;
         case "&":
           options = this._buildSpeakerSuggestions("").map((s) => {
