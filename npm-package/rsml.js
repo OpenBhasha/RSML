@@ -523,7 +523,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       this.renderMode = "normalized"; // or "verbatim"
       this._toggleInjected = false;
       // Pure view-state, not persisted — same treatment as renderMode.
-      this._displaySettings = { hideDisfluencies: false };
+      this._displaySettings = { hideDisfluencies: true };
       this._settingsPopupOpen = false;
 
       // Textarea `input` is the fallback path: if CodeMirror never mounts
