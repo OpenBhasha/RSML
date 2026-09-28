@@ -165,3 +165,24 @@ prefixes are available, each backed by its own vocabulary registered via
 
 Like `!`/`#`/`$`, the type code after the prefix is optional — `$$[…](…)`
 and `!![…](…)` render as "unspecified" dialect/domain.
+
+### Display settings
+
+A settings button next to the Verbatim/Normalized switch opens a small
+popup with a **Hide disfluencies** checkbox. It hides `hesitations`,
+`disfluencySpans`, and `isolatedOther` tags in the rendered output —
+the source text and editor are untouched, so switching it on/off never
+loses anything.
+
+A `repair` span written with the documented `reparandum - repair`
+convention is a special case: only the reparandum (and the ` - `
+separator) is hidden, keeping the corrected text visible.
+
+```
+Source:  @repair-start ఢిల్లీ కాదు - ముంబై @repair-end వెళ్ళాను.
+Shown (disfluencies visible): ఢిల్లీ కాదు - ముంబై వెళ్ళాను.
+Shown (disfluencies hidden):  ముంబై వెళ్ళాను.
+```
+
+A `repair` span with no ` - ` separator is hidden wholesale, like any
+other disfluency.

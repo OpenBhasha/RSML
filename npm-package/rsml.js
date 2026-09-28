@@ -64,6 +64,21 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
 .rsml-at-other           { background-color:#e0e6f0; border:1px solid #9aacc9; color:#324056; font-style:italic; }
 .rsml-at-unknown         { background-color:#888; color:#fff; border:1px solid #666; }
 
+/* "Hide disfluencies" display setting — combines opts.disfluencySpans,
+   opts.hesitations and opts.isolatedOther into one toggle. A repair span
+   that has a detected reparandum/repair split (rsml-repair-has-split) is
+   excluded from the wholesale rule below: its outer chip stays visible and
+   only its reparandum + separator children are hidden, leaving the
+   corrected text in place. A repair span with no detected split falls
+   through to the wholesale rule like any other disfluency. */
+/* !important: overrides the base chip rule's own display:inline-block
+   !important above (shared by every .rsml-span/.rsml-at element). */
+.rsml-content.rsml-hide-disfluencies .rsml-disfluency:not(.rsml-repair-has-split) { display: none !important; }
+.rsml-content.rsml-hide-disfluencies .rsml-at-hesitation { display: none !important; }
+.rsml-content.rsml-hide-disfluencies .rsml-at-other { display: none !important; }
+.rsml-content.rsml-hide-disfluencies .rsml-repair-has-split .rsml-reparandum,
+.rsml-content.rsml-hide-disfluencies .rsml-repair-has-split .rsml-repair-sep { display: none; }
+
 /* ===== Source-textarea syntax highlight overlay ===== */
 .rsml-hl-container { position: relative; display: block; }
 .rsml-hl-container > textarea.rsml-hl-textarea {
@@ -292,6 +307,51 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
   -moz-user-select: none;
   -ms-user-select: none;
 }
+/* Toolbar row: render-mode switch + settings button, side by side. */
+.rsml-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rsml-settings { position: relative; }
+.rsml-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 2px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  background: #fff;
+  color: #495057;
+  cursor: pointer;
+}
+.rsml-settings-btn:hover { background: #f1f3f5; }
+.rsml-settings-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 200px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  box-shadow: 0 6px 14px rgba(0,0,0,.18);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 0.85em;
+  color: #212529;
+}
+.rsml-settings-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
 `;
 
     const style = document.createElement("style");
@@ -462,6 +522,9 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
 
       this.renderMode = "normalized"; // or "verbatim"
       this._toggleInjected = false;
+      // Pure view-state, not persisted — same treatment as renderMode.
+      this._displaySettings = { hideDisfluencies: false };
+      this._settingsPopupOpen = false;
 
       // Textarea `input` is the fallback path: if CodeMirror never mounts
       // the render pane still updates as the user types.
@@ -495,6 +558,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
         this.output.removeEventListener("dblclick", this._onOutputDblclick);
         this._onOutputDblclick = null;
       }
+      this._closeSettingsPopup();
     }
     setValue(str) {
       const value = str || "";
@@ -741,6 +805,93 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       return wrap;
     }
 
+    // Gear button + popup, sitting beside the render-mode switch in the
+    // shared toolbar row. Currently one checkbox; more can be added later
+    // without restructuring (just another <label> + CSS rule).
+    _createSettingsControl() {
+      const wrap = document.createElement("div");
+      wrap.className = "rsml-settings";
+      wrap.innerHTML = `
+        <button type="button" class="rsml-settings-btn" aria-haspopup="true" aria-expanded="false" title="Display settings" aria-label="Display settings">
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M10 6.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm7.94 2.19-1.6-.28a6.4 6.4 0 0 0-.55-1.33l.95-1.32a.6.6 0 0 0-.06-.77l-1.16-1.16a.6.6 0 0 0-.77-.06l-1.32.95a6.4 6.4 0 0 0-1.33-.55l-.28-1.6A.6.6 0 0 0 11.23 2H9.6a.6.6 0 0 0-.6.5l-.28 1.6c-.47.14-.92.33-1.33.55L6.07 3.7a.6.6 0 0 0-.77.06L4.14 4.92a.6.6 0 0 0-.06.77l.95 1.32c-.22.41-.4.86-.55 1.33l-1.6.28a.6.6 0 0 0-.5.6v1.63c0 .3.21.55.5.6l1.6.28c.14.47.33.92.55 1.33l-.95 1.32a.6.6 0 0 0 .06.77l1.16 1.16c.2.2.53.23.77.06l1.32-.95c.41.22.86.4 1.33.55l.28 1.6c.05.29.3.5.6.5h1.63c.3 0 .55-.21.6-.5l.28-1.6c.47-.14.92-.33 1.33-.55l1.32.95c.24.17.57.14.77-.06l1.16-1.16a.6.6 0 0 0 .06-.77l-.95-1.32c.22-.41.4-.86.55-1.33l1.6-.28a.6.6 0 0 0 .5-.6V9.3a.6.6 0 0 0-.5-.6Z"/>
+          </svg>
+        </button>
+        <div class="rsml-settings-popup" hidden>
+          <label class="rsml-settings-item">
+            <input type="checkbox" data-setting="hideDisfluencies">
+            Hide disfluencies
+          </label>
+        </div>
+      `;
+
+      const btn = wrap.querySelector(".rsml-settings-btn");
+      const checkbox = wrap.querySelector('[data-setting="hideDisfluencies"]');
+      checkbox.checked = this._displaySettings.hideDisfluencies;
+
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (this._settingsPopupOpen) this._closeSettingsPopup();
+        else this._openSettingsPopup(wrap);
+      });
+      checkbox.addEventListener("change", () => {
+        this._displaySettings.hideDisfluencies = checkbox.checked;
+        this._applyDisplaySettings(this.output);
+      });
+
+      this._settingsWrap = wrap;
+      return wrap;
+    }
+
+    _openSettingsPopup(wrap) {
+      const popup = wrap.querySelector(".rsml-settings-popup");
+      const btn = wrap.querySelector(".rsml-settings-btn");
+      if (!popup || !btn) return;
+      popup.hidden = false;
+      btn.setAttribute("aria-expanded", "true");
+      this._settingsPopupOpen = true;
+
+      // Close on outside click or Escape. Added only while open; removed on
+      // close and in destroy() so nothing leaks past the widget's lifetime.
+      this._onDocPointerDown = (e) => {
+        if (!wrap.contains(e.target)) this._closeSettingsPopup();
+      };
+      this._onDocKeydown = (e) => {
+        if (e.key === "Escape") this._closeSettingsPopup();
+      };
+      document.addEventListener("mousedown", this._onDocPointerDown);
+      document.addEventListener("keydown", this._onDocKeydown);
+    }
+
+    _closeSettingsPopup() {
+      if (this._onDocPointerDown) {
+        document.removeEventListener("mousedown", this._onDocPointerDown);
+        this._onDocPointerDown = null;
+      }
+      if (this._onDocKeydown) {
+        document.removeEventListener("keydown", this._onDocKeydown);
+        this._onDocKeydown = null;
+      }
+      this._settingsPopupOpen = false;
+      if (this._settingsWrap) {
+        const popup = this._settingsWrap.querySelector(".rsml-settings-popup");
+        const btn = this._settingsWrap.querySelector(".rsml-settings-btn");
+        if (popup) popup.hidden = true;
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      }
+    }
+
+    // Toolbar row: render-mode switch + settings button, side by side.
+    // Built once and preserved across re-renders (see _render()), just like
+    // the switch alone was before.
+    _createToolbar() {
+      const bar = document.createElement("div");
+      bar.className = "rsml-toolbar";
+      bar.appendChild(this._createRenderToggle());
+      bar.appendChild(this._createSettingsControl());
+      return bar;
+    }
+
     /* =========================
        Render Pipeline
     ========================= */
@@ -748,17 +899,18 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       const text = this.textarea.value || "";
       const html = this._transformRSML(text);
 
-      // Preserve toggle across re-renders.
-      const toggle = this.output.querySelector(".form-check");
+      // Preserve the toolbar (render-mode switch + settings button) across re-renders.
+      const toolbar = this.output.querySelector(".rsml-toolbar");
       this.output.innerHTML = "";
-      if (toggle) this.output.appendChild(toggle);
-      if (!toggle && !this._toggleInjected) {
-        this.output.appendChild(this._createRenderToggle());
+      if (toolbar) this.output.appendChild(toolbar);
+      if (!toolbar && !this._toggleInjected) {
+        this.output.appendChild(this._createToolbar());
         this._toggleInjected = true;
       }
 
       const content = document.createElement("div");
-      content.className = `rsml-content rsml-mode-${this.renderMode}`;
+      content.className = `rsml-content rsml-mode-${this.renderMode}`
+        + (this._displaySettings.hideDisfluencies ? " rsml-hide-disfluencies" : "");
       content.innerHTML = html;
       this.output.appendChild(content);
 
@@ -776,6 +928,15 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       content.classList.add(`rsml-mode-${this.renderMode}`);
     }
 
+    // Toggle the hide-disfluencies class; CSS does the rest (see
+    // injectCoreStyles). A pure class flip, no re-render — scroll/caret
+    // position in the output pane is untouched.
+    _applyDisplaySettings(root) {
+      const content = root.querySelector(".rsml-content");
+      if (!content) return;
+      content.classList.toggle("rsml-hide-disfluencies", this._displaySettings.hideDisfluencies);
+    }
+
     /* =========================
        RSML Parser
        -------------------------
@@ -791,6 +952,9 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       const n = text.length;
       let literalStart = -1;
       const orphans = this._findOrphans(text);
+      // Consumed by _openSpan() (repair-start) and the boundary checks
+      // below (repair-end side) — see _findRepairSplits().
+      this._repairSplits = this._findRepairSplits(text);
       const flushLiteral = (end) => {
         if (literalStart === -1) return;
         const chunk = text.slice(literalStart, end);
@@ -807,6 +971,22 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       };
 
       while (i < n) {
+        // Zero-width repair-span boundaries (see _findRepairSplits): these
+        // don't consume any characters or `continue` — whatever's actually
+        // at position i still gets handled normally by the checks below.
+        if (this._repairSplits.dashStart.has(i)) {
+          flushLiteral(i);
+          out += `</span><span class="rsml-repair-sep">`;
+        }
+        if (this._repairSplits.dashEnd.has(i)) {
+          flushLiteral(i);
+          out += `</span><span class="rsml-repair-fix">`;
+        }
+        if (this._repairSplits.fixEnd.has(i)) {
+          flushLiteral(i);
+          out += `</span>`;
+        }
+
         // Prefixed bracket form:  ! # $  + optional type + [v](n)
         const pm = /^(\$\$|!!|[!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
         if (pm) {
@@ -913,6 +1093,79 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
         for (const p of positions) orphans.add(p);
       }
       return orphans;
+    }
+
+    // Pairs up @repair-start/@repair-end (innermost-first, same LIFO
+    // approach as _findOrphans) and, for each matched span, looks for the
+    // documented `reparandum - repair` convention inside it. Drives the
+    // "hide disfluencies" rendering split in _transformRSML()/_openSpan():
+    // a repair span with a detected dash keeps its corrected half visible
+    // even when disfluencies are hidden; one without falls back to being
+    // hidden wholesale like any other disfluency span.
+    //
+    // Returns four Sets of *source positions*, each a zero-width boundary
+    // consulted by _transformRSML's main loop:
+    //   openExtra — right after "@repair-start": _openSpan() opens an extra
+    //               <span class="rsml-reparandum"> here.
+    //   dashStart — closes reparandum, opens <span class="rsml-repair-sep">.
+    //   dashEnd   — closes the separator, opens <span class="rsml-repair-fix">.
+    //   fixEnd    — closes repair-fix early (trimmed of trailing
+    //               whitespace) so the space before "@repair-end" doesn't
+    //               double up with the literal space that follows it once
+    //               the reparandum is hidden.
+    _findRepairSplits(text) {
+      const openExtra = new Set();
+      const dashStart = new Set();
+      const dashEnd = new Set();
+      const fixEnd = new Set();
+
+      const re = /@repair-(start|end)(?![\w-])/g;
+      const stack = [];
+      const pairs = [];
+      let m;
+      while ((m = re.exec(text))) {
+        if (m[1] === "start") {
+          stack.push(m.index + m[0].length);
+        } else {
+          const contentStart = stack.pop();
+          if (contentStart == null) continue; // orphan -end; ignored here
+          pairs.push([contentStart, m.index]);
+        }
+      }
+
+      for (const [contentStart, contentEnd] of pairs) {
+        const dash = this._findTopLevelDash(text, contentStart, contentEnd);
+        if (!dash) continue; // no convention found — render/hide as a whole
+        let trimmedEnd = contentEnd;
+        while (trimmedEnd > dash.end && /\s/.test(text[trimmedEnd - 1])) trimmedEnd--;
+        openExtra.add(contentStart);
+        dashStart.add(dash.start);
+        dashEnd.add(dash.end);
+        fixEnd.add(trimmedEnd);
+      }
+
+      return { openExtra, dashStart, dashEnd, fixEnd };
+    }
+
+    // First top-level (not inside a nested [...]/(...) tag payload)
+    // whitespace-hyphen-whitespace run in text.slice(from, to) — the
+    // reparandum/repair separator convention, e.g. "दिल्ली मतलब - मुंबई".
+    // Expands to consume full surrounding whitespace runs so both sides
+    // trim clean. Returns null if no such run exists in range.
+    _findTopLevelDash(text, from, to) {
+      let depth = 0;
+      for (let i = from; i < to; i++) {
+        const c = text[i];
+        if (c === "[" || c === "(") { depth++; continue; }
+        if (c === "]" || c === ")") { depth = Math.max(0, depth - 1); continue; }
+        if (depth === 0 && c === "-" && /\s/.test(text[i - 1] || "") && /\s/.test(text[i + 1] || "")) {
+          let start = i, end = i + 1;
+          while (start > from && /\s/.test(text[start - 1])) start--;
+          while (end < to && /\s/.test(text[end])) end++;
+          return { start, end };
+        }
+      }
+      return null;
     }
 
     // Full validation pass. Returns:
@@ -1353,9 +1606,18 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       const category = this._spanCategory.get(base) || "other";
       const title = `${category}: ${base}`;
       const srcAttr = srcStart != null ? ` data-src="${srcStart}:${srcEnd}"` : "";
-      return `<span class="rsml-span rsml-span-${this._esc(base)} rsml-${this._esc(category)}"`
+      // A repair span with a detected reparandum/repair split (see
+      // _findRepairSplits) gets an extra marker class — excluded from the
+      // wholesale "hide disfluencies" rule so only its reparandum/separator
+      // children hide, not the corrected text — and immediately opens the
+      // reparandum wrapper; _transformRSML's boundary checks close it and
+      // open the separator/repair-fix wrappers as the loop reaches them.
+      const hasSplit = base === "repair" && this._repairSplits && this._repairSplits.openExtra.has(srcEnd);
+      const extraClass = hasSplit ? " rsml-repair-has-split" : "";
+      const openTag = `<span class="rsml-span rsml-span-${this._esc(base)} rsml-${this._esc(category)}${extraClass}"`
            + ` data-span="${this._esc(base)}" data-category="${this._esc(category)}"${srcAttr}`
            + ` data-bs-toggle="tooltip" data-bs-title="${this._esc(title)}">`;
+      return hasSplit ? openTag + `<span class="rsml-reparandum">` : openTag;
     }
 
     _buildNoiseTag(type, srcStart, srcEnd) {
