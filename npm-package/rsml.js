@@ -78,6 +78,14 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
 .rsml-content.rsml-hide-disfluencies .rsml-at-other { display: none !important; }
 .rsml-content.rsml-hide-disfluencies .rsml-repair-has-split .rsml-reparandum,
 .rsml-content.rsml-hide-disfluencies .rsml-repair-has-split .rsml-repair-sep { display: none; }
+/* Swallow the whitespace-only literal run immediately after a hidden
+   disfluency/hesitation/other token too, so consecutive hidden tokens
+   don't leave a stray or doubled gap behind. Only ever matches a run with
+   no real content (.rsml-lit-ws, see _transformRSML's wsOnly check) — a
+   run that mixes in real text is left alone. */
+.rsml-content.rsml-hide-disfluencies .rsml-disfluency:not(.rsml-repair-has-split) + .rsml-lit-ws,
+.rsml-content.rsml-hide-disfluencies .rsml-at-hesitation + .rsml-lit-ws,
+.rsml-content.rsml-hide-disfluencies .rsml-at-other + .rsml-lit-ws { display: none; }
 
 /* ===== Source-textarea syntax highlight overlay ===== */
 .rsml-hl-container { position: relative; display: block; }
