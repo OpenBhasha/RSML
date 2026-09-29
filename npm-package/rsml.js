@@ -78,14 +78,12 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
 .rsml-content.rsml-hide-disfluencies .rsml-at-other { display: none !important; }
 .rsml-content.rsml-hide-disfluencies .rsml-repair-has-split .rsml-reparandum,
 .rsml-content.rsml-hide-disfluencies .rsml-repair-has-split .rsml-repair-sep { display: none; }
-/* Swallow the whitespace-only literal run immediately after a hidden
-   disfluency/hesitation/other token too, so consecutive hidden tokens
-   don't leave a stray or doubled gap behind. Only ever matches a run with
-   no real content (.rsml-lit-ws, see _transformRSML's wsOnly check) — a
-   run that mixes in real text is left alone. */
-.rsml-content.rsml-hide-disfluencies .rsml-disfluency:not(.rsml-repair-has-split) + .rsml-lit-ws,
-.rsml-content.rsml-hide-disfluencies .rsml-at-hesitation + .rsml-lit-ws,
-.rsml-content.rsml-hide-disfluencies .rsml-at-other + .rsml-lit-ws { display: none; }
+/* .rsml-trailing-ws (see _transformRSML's swallowTrailingWs) wraps
+   whatever whitespace immediately follows a token hidden above — whether
+   that's more whitespace before another hidden tag, or the start of
+   ordinary prose — so removing the tag never leaves a stray or doubled
+   gap behind, however it's followed. */
+.rsml-content.rsml-hide-disfluencies .rsml-trailing-ws { display: none; }
 
 /* ===== Source-textarea syntax highlight overlay ===== */
 .rsml-hl-container { position: relative; display: block; }
@@ -978,6 +976,43 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
         literalStart = -1;
       };
 
+      // Called right after closing a token that's fully hidden by the
+      // "hide disfluencies" setting (an isolated hesitation/other tag, or
+      // the end of a disfluency span that isn't a split repair). Wraps any
+      // run of whitespace immediately following it — whether that run is
+      // pure whitespace or just the leading edge of ordinary prose — in its
+      // own hideable span, so removing the tag never leaves a stray or
+      // doubled gap before whatever comes next.
+      const swallowTrailingWs = () => {
+        const wsMatch = /^\s+/.exec(text.slice(i));
+        if (!wsMatch) return;
+        const wsEnd = i + wsMatch[0].length;
+        out += `<span class="rsml-trailing-ws" data-src="${i}:${wsEnd}">${this._esc(wsMatch[0])}</span>`;
+        i = wsEnd;
+      };
+
+      // True for the @-token that just closed if "hide disfluencies" makes
+      // it disappear entirely: an isolated hesitation/other tag, or the end
+      // of a disfluency span — except a split repair, whose repair-fix half
+      // stays visible so nothing after it needs trimming. `tokenStart` is
+      // the token's own source position (used to look up a repair-end's
+      // matching split, if any, via _repairSplits.splitContentEnd).
+      const isHiddenByDisfluencyToggle = (name, tokenStart) => {
+        const isStart = name.endsWith("-start");
+        const isEnd = !isStart && name.endsWith("-end");
+        if (!isStart && !isEnd) {
+          const cat = this._atCategory.get(name);
+          return cat === "hesitation" || cat === "other";
+        }
+        if (isEnd) {
+          const base = name.slice(0, -4);
+          if (this._spanCategory.get(base) !== "disfluency") return false;
+          if (base === "repair" && this._repairSplits.splitContentEnd.has(tokenStart)) return false;
+          return true;
+        }
+        return false; // "-start" tokens never trigger it themselves
+      };
+
       while (i < n) {
         // Zero-width repair-span boundaries (see _findRepairSplits): these
         // don't consume any characters or `continue` — whatever's actually
@@ -1036,12 +1071,16 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
           const at = /^@([\w-]+)/.exec(text.slice(i));
           if (at) {
             flushLiteral(i);
+            const name = at[1];
+            const tokenStart = i;
             if (orphans.has(i)) {
               out += this._buildOrphanChip(at[0], i, i + at[0].length);
+              i += at[0].length;
             } else {
-              out += this._buildAtToken(at[1], i, i + at[0].length);
+              out += this._buildAtToken(name, i, i + at[0].length);
+              i += at[0].length;
+              if (isHiddenByDisfluencyToggle(name, tokenStart)) swallowTrailingWs();
             }
-            i += at[0].length;
             continue;
           }
         }
@@ -1111,21 +1150,28 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
     // even when disfluencies are hidden; one without falls back to being
     // hidden wholesale like any other disfluency span.
     //
-    // Returns four Sets of *source positions*, each a zero-width boundary
+    // Returns five Sets of *source positions*, each a zero-width boundary
     // consulted by _transformRSML's main loop:
-    //   openExtra — right after "@repair-start": _openSpan() opens an extra
-    //               <span class="rsml-reparandum"> here.
-    //   dashStart — closes reparandum, opens <span class="rsml-repair-sep">.
-    //   dashEnd   — closes the separator, opens <span class="rsml-repair-fix">.
-    //   fixEnd    — closes repair-fix early (trimmed of trailing
-    //               whitespace) so the space before "@repair-end" doesn't
-    //               double up with the literal space that follows it once
-    //               the reparandum is hidden.
+    //   openExtra      — right after "@repair-start": _openSpan() opens an
+    //                    extra <span class="rsml-reparandum"> here.
+    //   dashStart      — closes reparandum, opens <span class="rsml-repair-sep">.
+    //   dashEnd        — closes the separator, opens <span class="rsml-repair-fix">.
+    //   fixEnd         — closes repair-fix early (trimmed of trailing
+    //                    whitespace) so the space before "@repair-end" doesn't
+    //                    double up with the literal space that follows it once
+    //                    the reparandum is hidden.
+    //   splitContentEnd — the "@repair-end" token's own start position, for
+    //                    every split pair — lets the main loop tell a split
+    //                    repair-end (repair-fix stays visible, no trailing-ws
+    //                    swallow needed) apart from a non-split one (hidden
+    //                    wholesale like any other disfluency, trailing-ws
+    //                    swallow applies the same as it does for them).
     _findRepairSplits(text) {
       const openExtra = new Set();
       const dashStart = new Set();
       const dashEnd = new Set();
       const fixEnd = new Set();
+      const splitContentEnd = new Set();
 
       const re = /@repair-(start|end)(?![\w-])/g;
       const stack = [];
@@ -1150,9 +1196,10 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
         dashStart.add(dash.start);
         dashEnd.add(dash.end);
         fixEnd.add(trimmedEnd);
+        splitContentEnd.add(contentEnd);
       }
 
-      return { openExtra, dashStart, dashEnd, fixEnd };
+      return { openExtra, dashStart, dashEnd, fixEnd, splitContentEnd };
     }
 
     // First top-level (not inside a nested [...]/(...) tag payload)
