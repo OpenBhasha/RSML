@@ -160,7 +160,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
 .tok-at-hesitation     { color:#8a7a10; }  /* olive     — @umm @uhh @hmm … */
 .tok-at-paralinguistic { color:#2e7d32; }  /* green     — @laughter @cough … */
 .tok-at-other          { color:#455a64; font-style: italic; }
-                                            /* slate     — @silence @unintelligible @stutter-block */
+                                            /* slate     — @short-pause @long-pause @unintelligible @stutter-block */
 .tok-at-unknown        { color:#616161; }
 /* Span-pair @-tokens */
 .tok-span-disfluency    { color:#6d4c41; }  /* brown     — @filler-* @repair-* … */
@@ -249,11 +249,15 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
   box-shadow: 0 6px 14px rgba(0,0,0,.18) !important;
   overflow: hidden;
 }
-/* Pitch-contour spans: inline (wraps naturally with content) with an inline
+/* Pitch spans: inline (wraps naturally with content) with an inline
    arrow prefix — no absolute positioning, so the arrow can never orphan
-   at the end of a line while its content wraps to the next. */
+   at the end of a line while its content wraps to the next. Contour
+   (raising/falling) uses diagonal arrows; register (high/low) uses
+   vertical ones. */
 .rsml-span.rsml-span-raising-pitch,
-.rsml-span.rsml-span-falling-pitch {
+.rsml-span.rsml-span-falling-pitch,
+.rsml-span.rsml-span-high-pitch,
+.rsml-span.rsml-span-low-pitch {
   background: rgba(252, 122, 0, 0.1);
   color:#000;
   border: 1px solid rgb(252, 122, 0);
@@ -265,6 +269,12 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
 }
 .rsml-span.rsml-span-falling-pitch::before {
   content: "↘\\00a0"; color:#06c; font-weight: 700;
+}
+.rsml-span.rsml-span-high-pitch::before {
+  content: "↑\\00a0"; color:#c22; font-weight: 700;
+}
+.rsml-span.rsml-span-low-pitch::before {
+  content: "↓\\00a0"; color:#06c; font-weight: 700;
 }
 /* Whitespace-only literal runs between block-level tags (typically the
    space or newline between consecutive speaker turns) collapse so they
@@ -393,7 +403,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
   ];
 
   const DEFAULT_ISOLATED_OTHER = [
-    "@silence", "@unintelligible", "@stutter-block", "@pause", "@short-pause", "@long-pause",
+    "@unintelligible", "@stutter-block", "@short-pause", "@long-pause",
   ];
 
   // Span pairs written as @<name>-start ... @<name>-end.
@@ -406,7 +416,8 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
   ];
 
   const DEFAULT_PROSODY_SPANS = [
-    "emphasis", "falling-pitch", "raising-pitch", "fast-speech", "slow-speech",
+    "emphasis", "falling-pitch", "raising-pitch", "high-pitch", "low-pitch",
+    "fast-speech", "slow-speech",
   ];
 
 

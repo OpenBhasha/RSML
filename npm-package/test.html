@@ -37,7 +37,7 @@
         placeholder="Type @ / # / ! / $ / & for tags..."
       >&s1-start @umm @filler-start अच्छा @filler-end तो @broken-word-start टि @broken-word-end @raising-pitch-start !en[टिकट](ticket) किसने खरीदा? @raising-pitch-end #MONEY[दो सौ रुपये](₹200) का था न? या @false-start-start #MONEY[तीन सौ](₹300) @false-start-end #MONEY[चार सौ](₹400) का? @throat-clearing #QUANT[दो टिकट](2 ticket) @raising-pitch-start है ना? @raising-pitch-end और वो #PER[राजू](राजू) #HON[काका](काका) उनका !en[सीट नंबर](seat number) @raising-pitch-start @stutter-block #NUM[सेवंटी पैव](seventy five) था ना? @raising-pitch-end @yelling-start अरे? कुछ भी! @yelling-end @cough &s1-end
 
-&s2-start @uhh నేను @filler-start మరి @filler-end నిన్న #LOC[ఎంజీ రోడ్డు](MG Road) దగ్గర ఏం !en[హోటల్](hotel) అది @uh-huh @repetition-start #LOC[సర్వనా భవన్](సర్వనా భవన్) @repetition-end #LOC[సర్వనా భవన్](సర్వనా భవన్)లో @silence మన #PER[ప్రసాద్](ప్రసాద్) గారిని కలిశాను. ఆయన #PER[ప్రొఫెసర్ శర్మ](Professor శర్మ) గారి గురించి @emphasis-start చాలా చాలా @emphasis-end మంచి మాటలు చెప్పారు. ఆయన #LANG[ఇంగ్లీషు](English)లో రాసిన నవలల గురించి #DATETIME[రెండు గంటల](2 గంటల) సేపు @raising-pitch-start ఆపకుండా మాట్లాడుతూనే ఉన్నారు. @raising-pitch-end @laughter @huh @laughing-start బుర్ర తినేశారు అనుకో @laughing-end &s2-end</textarea>
+&s2-start @uhh నేను @filler-start మరి @filler-end నిన్న #LOC[ఎంజీ రోడ్డు](MG Road) దగ్గర ఏం !en[హోటల్](hotel) అది @uh-huh @repetition-start #LOC[సర్వనా భవన్](సర్వనా భవన్) @repetition-end #LOC[సర్వనా భవన్](సర్వనా భవన్)లో @short-pause మన #PER[ప్రసాద్](ప్రసాద్) గారిని కలిశాను. ఆయన #PER[ప్రొఫెసర్ శర్మ](Professor శర్మ) గారి గురించి @emphasis-start చాలా చాలా @emphasis-end మంచి మాటలు చెప్పారు. ఆయన #LANG[ఇంగ్లీషు](English)లో రాసిన నవలల గురించి #DATETIME[రెండు గంటల](2 గంటల) సేపు @raising-pitch-start ఆపకుండా మాట్లాడుతూనే ఉన్నారు. @raising-pitch-end @laughter @huh @laughing-start బుర్ర తినేశారు అనుకో @laughing-end &s2-end</textarea>
     </div>
 
     <div class="col-12 col-md-6">
@@ -179,13 +179,15 @@
         <p class="ms-3 bg-gray rounded p-2">
           Hesitations: <code>@umm</code>, <code>@uhh</code>, <code>@ehh</code>…<br />
           Sounds: <code>@laughter</code>, <code>@cough</code>, <code>@breathe</code>…<br />
-          Other: <code>@silence</code>, <code>@stutter-block</code>, <code>@unintelligible</code><br />
+          Other: <code>@short-pause</code>, <code>@long-pause</code>, <code>@stutter-block</code>, <code>@unintelligible</code><br />
           Disfluency spans: <code>@filler-start … @filler-end</code>,
           <code>@repair-start reparandum - repair @repair-end</code><br />
           Paralinguistic spans: <code>@laughing-start … @laughing-end</code><br />
           Prosody: <code>@emphasis-start … @emphasis-end</code>,
           <code>@raising-pitch-start … @raising-pitch-end</code>,
-          <code>@falling-pitch-start … @falling-pitch-end</code>
+          <code>@falling-pitch-start … @falling-pitch-end</code>,
+          <code>@high-pitch-start … @high-pitch-end</code>,
+          <code>@low-pitch-start … @low-pitch-end</code>
         </p>
 
         <p>
@@ -231,7 +233,7 @@
   ];
 
   const isolatedOther = [
-    "@silence", "@unintelligible", "@stutter-block",
+    "@unintelligible", "@stutter-block", "@short-pause", "@long-pause",
   ];
 
   const disfluencySpans = [
@@ -243,7 +245,7 @@
   ];
 
   const prosodySpans = [
-    "emphasis", "falling-pitch", "raising-pitch",
+    "emphasis", "falling-pitch", "raising-pitch", "high-pitch", "low-pitch",
   ];
 
   const entityMap = {
