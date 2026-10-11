@@ -393,7 +393,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
   // ---------- Defaults ----------
   // Isolated @-tokens (rendered as a single <noise> element).
   const DEFAULT_HESITATIONS = [
-    "@umm", "@uhh", "@hmm", "@ugh", "@huh", "@tsk", "@uh-huh", "@ehh",
+    "@umm", "@uhh", "@hmm", "@ugh", "@huh", "@tsk", "@uh-huh", "@ehh", "@ooh", "@uhh-oh", "@ohh", "@ho",
   ];
 
   const DEFAULT_ISOLATED_PARALINGUISTICS = [
