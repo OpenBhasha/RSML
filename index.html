@@ -207,7 +207,7 @@
 </div>
 
 <script type="module">
-  import RSMLAnnotator from "https://cdn.jsdelivr.net/npm/rsml@3.3.4/rsml.esm.js";
+  import RSMLAnnotator from "./npm-package/rsml.esm.js";
 
   document.querySelectorAll(".tag-textarea").forEach((textarea, index) => {
     new RSMLAnnotator({
@@ -221,7 +221,7 @@
   // ---------- Reference data (matches rsml@latest defaults) ----------
 
   const hesitations = [
-    "@umm", "@uhh", "@hmm", "@ugh", "@huh", "@tsk", "@uh-huh", "@ehh",
+    "@umm", "@uhh", "@hmm", "@ugh", "@huh", "@tsk", "@uh-huh", "@ehh", "@ohh",
   ];
 
   const isolatedParalinguistics = [
@@ -239,7 +239,7 @@
   ];
 
   const paralinguisticSpans = [
-    "crying", "yelling", "laughing", "singing", "humming", "whistling", "whispering",
+    "crying", "yelling", "laughing", "singing", "humming", "whistling", "whispering", "chanting",
   ];
 
   const prosodySpans = [
@@ -291,6 +291,16 @@
       name: "Organization",
       explanation: "Companies, institutions, agencies, and other organized bodies.",
       example: "#ORG[ट्र्रिपल आइटी](IIIT)",
+    },
+    GROUP: {
+      name: "Group",
+      explanation: "Names of groups of people.",
+      example: "#GROUP[the beatles](The Beatles)",
+    },
+    URL: {
+      name: "URL",
+      explanation: "Website addresses and links mentioned in speech.",
+      example: "#URL[example dot com](example.com)",
     },
     BRAND: {
       name: "Brand",

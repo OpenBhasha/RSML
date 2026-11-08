@@ -412,7 +412,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
   ];
 
   const DEFAULT_PARALINGUISTIC_SPANS = [
-    "crying", "yelling", "laughing", "singing", "humming", "whistling", "whispering",
+    "crying", "yelling", "laughing", "singing", "humming", "whistling", "whispering", "chanting",
   ];
 
   const DEFAULT_PROSODY_SPANS = [
@@ -431,6 +431,8 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
     EVENT: "Event",
     SPORTS: "Sports",
     ORG: "Organization",
+    GROUP: "Group",
+    URL: "URL",
     BRAND: "Brand",
     HON: "Honorific",
     DATETIME: "Date/Time",
@@ -1884,7 +1886,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       // preceding characters look like a fresh prefix (`!`, `#`, `$`,
       // optionally followed by a type name — must be at line start or
       // after whitespace so plain `[` prose isn't hijacked), the handler
-      // auto-scaffolds `[]()` and drops the caret between the brackets.
+      // auto-scaffolds `[]()` and drops the caret inside `()`.
       // This is what makes typing `![` followed by anything (or just
       // pressing Enter) render as a code-mix without needing to pick from
       // the popup.
@@ -1919,8 +1921,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
         //   - Bare mispronunciation:  `[` → `[]()`
         //   - After a bare prefix:    `!` `[` → `![]()`
         //   - After a typed prefix:   `#PER` `[` → `#PER[]()`
-        // In every case the caret lands between `[` and `]` ready for
-        // verbatim input.
+        // In every case the caret lands inside `()` for normalized input.
         if (insert === "[") {
           const doc = v.state.doc;
           // Don't re-scaffold if a `[]()` shell already sits at the caret.
@@ -1928,7 +1929,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
           if (after.startsWith("[")) return false;
           v.dispatch({
             changes: { from, to, insert: "[]()" },
-            selection: { anchor: from + 1 },
+            selection: { anchor: from + 3 },
             userEvent: "input.type",
           });
           return true;
@@ -2292,8 +2293,8 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       // If a `[verbatim]()` (or `[verbatim](normalized)`) already sits
       // immediately after the trigger — the shape produced when the user
       // wrapped a selection with the prefix — insert only the type name
-      // and land the caret at the end of the verbatim slot.
-      // Otherwise, insert the full scaffold and drop the caret inside `[`.
+      // and land the caret inside the normalized slot.
+      // Otherwise, insert the full scaffold and drop the caret inside `()`.
       const bracketApply = (typeSegment) =>
         (view, completion, from, to) => {
           const doc = view.state.doc;
@@ -2304,16 +2305,16 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
             const verbatim = scaf[1];
             view.dispatch({
               changes: { from, to, insert: typeSegment },
-              // caret just before the `]` (end of verbatim)
-              selection: { anchor: from + typeSegment.length + 1 + verbatim.length },
+              // Enter the normalized slot when parentheses are present.
+              selection: { anchor: from + typeSegment.length + 1 + verbatim.length + (scaf[2] ? 2 : 0) },
               userEvent: "input.complete",
             });
           } else {
             const insert = `${typeSegment}[]()`;
             view.dispatch({
               changes: { from, to, insert },
-              // caret between `[` and `]`
-              selection: { anchor: from + typeSegment.length + 1 },
+              // caret inside `()`
+              selection: { anchor: from + typeSegment.length + 3 },
               userEvent: "input.complete",
             });
           }
