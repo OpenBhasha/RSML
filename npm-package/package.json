@@ -1,16 +1,38 @@
 {
   "name": "rsml",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "description": "Rich Speech Markup Language annotation toolkit for rich transcription of speech.",
-  "main": "rsml.js",
-  "module": "rsml.esm.js",
   "type": "module",
+  "main": "rsml.cjs",
+  "module": "rsml.esm.js",
+  "types": "rsml.d.ts",
+  "unpkg": "rsml.js",
+  "jsdelivr": "rsml.js",
   "exports": {
     ".": {
+      "types": "./rsml.d.ts",
       "import": "./rsml.esm.js",
-      "require": "./rsml.js"
-    }
+      "require": "./rsml.cjs"
+    },
+    "./core": {
+      "types": "./core.d.ts",
+      "import": "./core.js",
+      "require": "./core.cjs"
+    },
+    "./rsml.js": "./rsml.js",
+    "./rsml.esm.js": "./rsml.esm.js"
   },
+  "files": [
+    "rsml.js",
+    "rsml.cjs",
+    "rsml.esm.js",
+    "rsml.d.ts",
+    "core.js",
+    "core.cjs",
+    "core.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "speech",
     "linguistics",
@@ -25,7 +47,11 @@
   "author": "Radhe Shyam Salopanthula",
   "license": "MIT",
   "scripts": {
-    "build": "echo 'Already built manually'",
-    "prepare": "npm run build"
+    "build": "node build.mjs",
+    "test": "npm run build && node --test \"test/*.test.js\"",
+    "prepublishOnly": "npm test"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }
