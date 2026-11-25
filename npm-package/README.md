@@ -152,6 +152,59 @@ annotator.remove("entities", "PRODUCT");
 which each share one namespace across their sibling categories — a name
 already registered under a *different* category in that family.
 
+### Tagsets
+
+The whole tagset is one object with a key per category
+(`RSMLAnnotator.tagCategories()` lists them). The library ships a default
+tagset, which you can read, replace or reset.
+
+```js
+const current = annotator.getTagset();                   // copy of this editor's tagset
+annotator.setTagset({ hesitations: ["@uh"] });           // replace all; omitted categories become empty
+annotator.updateTagset({ prosodySpans: ["emphasis"] });  // replace only the given categories
+annotator.resetTagset();                                 // back to the library default
+
+RSMLAnnotator.getDefaultTagset();                        // copy of the library default
+RSMLAnnotator.setDefaultTagset(myTagset);                // change the library default (new editors and resetTagset())
+```
+
+Each call validates its input first and throws without changing anything if
+the input is invalid. A category passed to the constructor overrides the
+default for that category.
+
+### Span tags
+
+Select some text and type `@`. The selection is wrapped in `@-start` and
+`@-end` tags, and the caret goes into the name slot:
+`@-start …selected… @-end`.
+
+- Type the name (for example `fi`). It is copied into the closing tag as you type.
+  A list of span names (disfluency, paralinguistic and prosody) is shown and filters as you type.
+- Use ↑/↓ and Enter to pick a name, or click one. Enter with no list open also
+  accepts the typed name.
+- Escape before choosing undoes the wrap and restores the selected text.
+- Moving the caret out of the tags ends the wrap; a name left empty stays as `@-start`/`@-end`.
+
+A span may not contain another span with the same name (for example a `filler`
+inside a `filler`). Spans with different names may nest. Such a repeat is
+reported as an error.
+
+Editing the name of any span tag changes its partner too, as with paired HTML
+tags: `@filler-start` and `@filler-end` stay in step. Whenever the caret is in a
+start tag's name, the span list is shown.
+
+Speaker tags work the same way. Select some text and type `&`: it is wrapped
+in `&s-start … &s-end`, and the caret goes into the number slot. Type the
+number (1, 2, 3 …), or pick one from the list, and both tags are filled in. This works in the CodeMirror
+editor; the plain-textarea fallback does not support it.
+
+### Bracket insertion
+
+Typing `[` to insert `[]()` or choosing a bracket tag from autocomplete
+places the caret inside `()` for normalized text. To wrap selected text,
+type `[` for mispronunciation, or type `!`, `#`, or `$` and choose an
+autocomplete option. The selected text goes inside `[]`.
+
 ### Dialect and domain markup
 
 Alongside `!` (code-mix / language) and `#` (entity), two more bracket
