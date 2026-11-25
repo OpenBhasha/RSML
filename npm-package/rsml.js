@@ -282,8 +282,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
 .rsml-lit-ws { white-space: normal; }
 /* Speaker: the label sits on its own line before the turn content. */
 .rsml-speaker { background: transparent; border: none; padding: 0; border-radius: 0; display: block; margin-top: 10px; }
-.rsml-speaker:first-child { margin-top: 0; }
-.rsml-speaker-label {
+.rsml-speaker:first-child { margin-top: 0; }.rsml-speaker-label {
   display: block;
   width: fit-content;
   font-size: 0.7em;
@@ -471,6 +470,228 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
     domains:                 { kind: "map" },
   };
 
+  // ---------- Tagset ----------
+  // A tagset is one object holding every category in CATEGORY_SPECS:
+  //   isolated/span categories -> arrays of tag names
+  //   map categories           -> { code: label }
+  // The library default is built from the DEFAULT_* lists above. It can be
+  // replaced with RSMLAnnotator.setDefaultTagset(); resetTagset() returns to it.
+  const TAG_CATEGORIES = Object.keys(CATEGORY_SPECS);
+  const tagCategoryOf = (cat) => CATEGORY_SPECS[cat];
+  const stripAtPrefix = (t) => (t[0] === "@" ? t.slice(1) : t);
+
+  function cloneTagset(t) {
+    const out = {};
+    for (const cat of TAG_CATEGORIES) {
+      out[cat] = Array.isArray(t[cat]) ? t[cat].slice() : Object.assign({}, t[cat]);
+    }
+    return out;
+  }
+
+  // Checks and normalizes a complete tagset. Categories left out are empty.
+  // Duplicates are dropped, isolated names get their "@", languages are
+  // lowercased, and a name used by two sibling categories is rejected.
+  // Throws an Error with the library prefix on any problem.
+  function buildTagset(input) {
+    if (input == null) input = {};
+    if (typeof input !== "object" || Array.isArray(input)) {
+      throw new Error("[RSMLAnnotator] A tagset must be an object keyed by category.");
+    }
+    const unknown = Object.keys(input).filter((k) => !TAG_CATEGORIES.includes(k));
+    if (unknown.length) {
+      throw new Error(
+        `[RSMLAnnotator] Unknown tagset category: "${unknown[0]}". Expected one of: ${TAG_CATEGORIES.join(", ")}`
+      );
+    }
+    const out = {};
+    const owners = { isolated: new Map(), span: new Map() };
+    for (const cat of TAG_CATEGORIES) {
+      const spec = tagCategoryOf(cat);
+      const value = input[cat];
+      if (spec.kind === "map") {
+        if (value != null && typeof value !== "object") {
+          throw new Error(`[RSMLAnnotator] "${cat}" must be an object of code -> label.`);
+        }
+        out[cat] = {};
+        for (const [code, label] of Object.entries(value || {})) {
+          if (typeof code !== "string" || !code.trim()) {
+            throw new Error(`[RSMLAnnotator] "${cat}" has an empty code.`);
+          }
+          const key = spec.lowercaseKey ? code.toLowerCase() : code;
+          out[cat][key] = label == null || label === "" ? key : label;
+        }
+        continue;
+      }
+      if (value != null && !Array.isArray(value)) {
+        throw new Error(`[RSMLAnnotator] "${cat}" must be an array.`);
+      }
+      out[cat] = [];
+      for (const raw of value || []) {
+        if (typeof raw !== "string" || !raw.trim()) {
+          throw new Error(`[RSMLAnnotator] "${cat}" has an empty entry.`);
+        }
+        const bare = spec.kind === "isolated" ? stripAtPrefix(raw) : raw;
+        if (!/^[\w-]+$/.test(bare)) {
+          throw new Error(
+            `[RSMLAnnotator] Invalid name "${raw}" in "${cat}" — only letters, numbers, "_" and "-" are allowed.`
+          );
+        }
+        const owner = owners[spec.kind];
+        const seen = owner.get(bare);
+        if (seen && seen !== spec.tagCategory) {
+          throw new Error(
+            `[RSMLAnnotator] "${bare}" is used by two ${seen}/${spec.tagCategory} ${spec.kind === "isolated" ? "tags" : "spans"}. Each name may appear in one category only.`
+          );
+        }
+        owner.set(bare, spec.tagCategory);
+        const stored = spec.kind === "isolated" ? `@${bare}` : bare;
+        if (!out[cat].includes(stored)) out[cat].push(stored);
+      }
+    }
+    return out;
+  }
+
+  let libraryDefaultTagset = buildTagset({
+    hesitations: DEFAULT_HESITATIONS,
+    isolatedParalinguistics: DEFAULT_ISOLATED_PARALINGUISTICS,
+    isolatedOther: DEFAULT_ISOLATED_OTHER,
+    disfluencySpans: DEFAULT_DISFLUENCY_SPANS,
+    paralinguisticSpans: DEFAULT_PARALINGUISTIC_SPANS,
+    prosodySpans: DEFAULT_PROSODY_SPANS,
+    entities: DEFAULT_ENTITY_MAP,
+    languages: DEFAULT_LANGS,
+  });
+
+  // ---------- Span wrap (@ over a selection) ----------
+  // `@` over a selection gives `@-start<selection>@-end`. The name slots of
+  // the two tags must match, so the name is typed once and copied across.
+  // The session (where the wrap and its slots are) lives in a StateField and
+  // is mapped through every change. Passed the CodeMirror state module.
+  const SPAN_NAME_RE = /^[\w-]+$/;
+  const isSpanName = (name) => SPAN_NAME_RE.test(name) && !/-(start|end)$/.test(name);
+
+  // Span tags in document order: @<name>-start / @<name>-end. The name may be
+  // empty (a fresh wrap). nameFrom/nameTo bound the name in the text.
+  // Speaker tags are &sN-start / &sN-end; their name is the number N. The
+  // prefix ("@" or "&s") says which kind of tag it is, and tags pair only
+  // with tags of the same prefix and name.
+  function scanSpanTags(text) {
+    const re = /@([\w-]*)-(start|end)(?![\w-])|&s(\d*)-(start|end)(?![\w-])/g;
+    const tags = [];
+    let m;
+    while ((m = re.exec(text))) {
+      const prefix = m[1] !== undefined ? "@" : "&s";
+      const name = m[1] !== undefined ? m[1] : m[3];
+      const kind = m[1] !== undefined ? m[2] : m[4];
+      const nameFrom = m.index + prefix.length;
+      tags.push({ prefix, kind, name, nameFrom, nameTo: nameFrom + name.length });
+    }
+    return tags;
+  }
+
+  // Whether `name` is usable in a tag with this prefix.
+  const isTagName = (prefix, name) => (prefix === "&s" ? /^\d+$/.test(name) : isSpanName(name));
+
+  // Index of the tag that pairs with tags[i] (same name, opposite kind,
+  // respecting nesting), or -1.
+  function partnerIndex(tags, i) {
+    const t = tags[i];
+    const step = t.kind === "start" ? 1 : -1;
+    let depth = 0;
+    for (let j = i + step; j >= 0 && j < tags.length; j += step) {
+      const u = tags[j];
+      if (u.name !== t.name || u.prefix !== t.prefix) continue;
+      if (u.kind === t.kind) {
+        depth++;
+      } else if (depth === 0) {
+        return j;
+      } else {
+        depth--;
+      }
+    }
+    return -1;
+  }
+
+  // The span tag (start or end) whose name contains `pos`, or null.
+  function spanNameAt(state, pos) {
+    return scanSpanTags(state.doc.toString()).find(
+      (t) => pos >= t.nameFrom && pos <= t.nameTo
+    ) || null;
+  }
+
+  function createSpanWrap(state) {
+    const startEffect = state.StateEffect.define();
+    const endEffect = state.StateEffect.define();
+    const mapRange = (r, changes) => ({
+      from: changes.mapPos(r.from, -1),
+      to: changes.mapPos(r.to, 1),
+    });
+
+    const field = state.StateField.define({
+      create: () => null,
+      update(value, tr) {
+        let v = value;
+        if (v && tr.docChanged) {
+          const c = tr.changes;
+          v = {
+            prefix: v.prefix,
+            wrap: { from: c.mapPos(v.wrap.from, -1), to: c.mapPos(v.wrap.to, -1) },
+            start: mapRange(v.start, c),
+            body: mapRange(v.body, c),
+            end: mapRange(v.end, c),
+          };
+        }
+        for (const e of tr.effects) {
+          if (e.is(startEffect)) v = e.value;
+          else if (e.is(endEffect)) v = null;
+        }
+        // Leaving the wrap (caret outside it) ends the session.
+        if (v) {
+          const head = tr.state.selection.main.head;
+          if (head < v.wrap.from || head > v.wrap.to) v = null;
+        }
+        return v;
+      },
+    });
+
+    // Any edit to the name of a span tag is copied to its partner tag (the
+    // matching -start or -end), as HTML editors do for paired tags. The
+    // partner is found in the document before the edit. The copy runs as a
+    // second change in the same transaction, tagged so it is not copied again.
+    const mirrorTag = state.Annotation.define();
+    const mirror = state.EditorState.transactionFilter.of((tr) => {
+      if (!tr.docChanged || tr.annotation(mirrorTag) || tr.effects.some((e) => e.is(startEffect))) {
+        return tr;
+      }
+      const tags = scanSpanTags(tr.startState.doc.toString());
+      const changed = [];
+      tr.changes.iterChangedRanges((fa, ta) => changed.push([fa, ta]));
+      const edits = [];
+      const seen = new Set();
+      for (const [fa, ta] of changed) {
+        const i = tags.findIndex((t) => fa >= t.nameFrom && ta <= t.nameTo);
+        if (i < 0 || seen.has(i)) continue;
+        const j = partnerIndex(tags, i);
+        if (j < 0 || seen.has(j)) continue;
+        const partner = tags[j];
+        // Leave the partner alone if the user is editing its name too.
+        if (changed.some(([a, b]) => b >= partner.nameFrom && a <= partner.nameTo)) continue;
+        seen.add(i);
+        seen.add(j);
+        const name = tr.newDoc.sliceString(
+          tr.changes.mapPos(tags[i].nameFrom, -1),
+          tr.changes.mapPos(tags[i].nameTo, 1)
+        );
+        // Positions are in the document before `tr`, like `tr` itself.
+        edits.push({ from: partner.nameFrom, to: partner.nameTo, insert: name });
+      }
+      if (!edits.length) return tr;
+      return [tr, { changes: edits, annotations: mirrorTag.of(true) }];
+    });
+
+    return { field, mirror, startEffect, endEffect };
+  }
+
   // ---------- Core Class ----------
   class RSMLAnnotator {
     /**
@@ -498,22 +719,18 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       injectCoreStyles();
 
       // --- Options & Elements ---
+      // Start from the library's default tagset; any category passed in
+      // `opts` replaces it, then the whole tagset is checked.
+      const given = {};
+      for (const cat of TAG_CATEGORIES) {
+        if (opts && opts[cat] !== undefined) given[cat] = opts[cat];
+      }
       this.opts = Object.assign(
-        {
-          hesitations: DEFAULT_HESITATIONS.slice(),
-          isolatedParalinguistics: DEFAULT_ISOLATED_PARALINGUISTICS.slice(),
-          isolatedOther: DEFAULT_ISOLATED_OTHER.slice(),
-          disfluencySpans: DEFAULT_DISFLUENCY_SPANS.slice(),
-          paralinguisticSpans: DEFAULT_PARALINGUISTIC_SPANS.slice(),
-          prosodySpans: DEFAULT_PROSODY_SPANS.slice(),
-          entities: Object.assign({}, DEFAULT_ENTITY_MAP),
-          languages: Object.assign({}, DEFAULT_LANGS),
-          dialects: {},
-          domains: {},
-          demoText: false,
-        },
-        opts || {}
+        { demoText: false },
+        opts || {},
+        buildTagset(Object.assign(cloneTagset(libraryDefaultTagset), given))
       );
+      this._sw = null; // span-wrap plumbing, created when CodeMirror mounts
 
       this._rebuildTagCaches();
 
@@ -597,6 +814,58 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
     }
     redo() {
       if (this.view && this._cm) return this._cm.commands.redo(this.view);
+    }
+
+    // ---------- Public API: tagset ----------
+    // The tagset is every category at once (see tagCategories()). Each
+    // function below validates its input first; on error it throws and the
+    // annotator is left unchanged.
+
+    // Category names, in the order they appear in a tagset.
+    static tagCategories() {
+      return TAG_CATEGORIES.slice();
+    }
+
+    // A copy of the library's default tagset (the one resetTagset() restores).
+    static getDefaultTagset() {
+      return cloneTagset(libraryDefaultTagset);
+    }
+
+    // Replaces the library's default tagset. Affects annotators created
+    // afterwards and any later resetTagset(); running annotators keep their
+    // current tagset. Categories left out are empty.
+    static setDefaultTagset(tagset) {
+      libraryDefaultTagset = buildTagset(tagset);
+    }
+
+    // A copy of this annotator's current tagset.
+    getTagset() {
+      return cloneTagset(this.opts);
+    }
+
+    // Replaces the whole tagset. Categories left out become empty.
+    setTagset(tagset) {
+      this._applyTagset(buildTagset(tagset));
+    }
+
+    // Replaces only the categories given; the others are kept.
+    updateTagset(changes) {
+      if (changes == null || typeof changes !== "object" || Array.isArray(changes)) {
+        throw new Error("[RSMLAnnotator] updateTagset() needs an object of categories to change.");
+      }
+      this._applyTagset(buildTagset(Object.assign(this.getTagset(), changes)));
+    }
+
+    // Restores the library's default tagset.
+    resetTagset() {
+      this._applyTagset(cloneTagset(libraryDefaultTagset));
+    }
+
+    // Installs a validated tagset and refreshes the editor.
+    _applyTagset(next) {
+      for (const cat of TAG_CATEGORIES) this.opts[cat] = next[cat];
+      this._rebuildTagCaches();
+      this._refreshAfterConfigChange();
     }
 
     // ---------- Public API: dynamic registration ----------
@@ -970,6 +1239,10 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       let i = 0;
       const n = text.length;
       let literalStart = -1;
+      // Transcript text outside a speaker turn belongs to the default speaker.
+      // It gets its own labelled block, opened at its first visible character.
+      let inSpeaker = false;
+      let defaultOpen = false;
       const orphans = this._findOrphans(text);
       // Consumed by _openSpan() (repair-start) and the boundary checks
       // below (repair-end side) — see _findRepairSplits().
@@ -1043,6 +1316,16 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
           out += `</span>`;
         }
 
+        // Visible transcript text outside every speaker turn opens the
+        // default speaker's block (speaker tags and whitespace do not).
+        if (!inSpeaker && !defaultOpen && /\S/.test(text[i]) &&
+            !/^&s\d+-(start|end)(?![\w-])/.test(text.slice(i))) {
+          flushLiteral(i);
+          out += `<span class="rsml-speaker" data-speaker="s1">`
+               + `<span class="rsml-speaker-label">Speaker 1:</span>`;
+          defaultOpen = true;
+        }
+
         // Prefixed bracket form:  ! # $  + optional type + [v](n)
         const pm = /^(\$\$|!!|[!#$])([A-Za-z][\w-]*)?\[/.exec(text.slice(i));
         if (pm) {
@@ -1106,10 +1389,13 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
             if (orphans.has(i)) {
               out += this._buildOrphanChip(sp[0], i, i + sp[0].length);
             } else if (sp[2] === "start") {
+              if (defaultOpen) { out += `</span>`; defaultOpen = false; }
+              inSpeaker = true;
               const num = sp[1].slice(1);
               out += `<span class="rsml-speaker" data-speaker="${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">`
                    + `<span class="rsml-speaker-label" data-bs-toggle="tooltip" data-bs-title="speaker turn: ${this._esc(sp[1])}" data-src="${i}:${i + sp[0].length}">Speaker ${this._esc(num)}:</span>`;
             } else {
+              inSpeaker = false;
               out += `</span>`;
             }
             i += sp[0].length;
@@ -1122,6 +1408,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
         i++;
       }
       flushLiteral(i);
+      if (defaultOpen) out += `</span>`;
       return out;
     }
 
@@ -1263,6 +1550,29 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
           kind: "orphan",
           message: `Unpaired ${role}: no matching ${missing}`,
         });
+      }
+
+      // 1b) A span may not contain a span with the same name. Other span
+      // names may be nested inside it.
+      {
+        const open = new Map();
+        const re = /@([\w-]+?)(-start|-end)(?![\w-])/g;
+        let m;
+        while ((m = re.exec(text))) {
+          const name = m[1];
+          if (m[2] === "-start") {
+            if (open.get(name)) {
+              errors.push({
+                start: m.index, end: m.index + m[0].length,
+                kind: "nested-same-span",
+                message: `"${name}" is already open here: a span can't contain another "${name}" span`,
+              });
+            }
+            open.set(name, (open.get(name) || 0) + 1);
+          } else if (open.get(name)) {
+            open.set(name, open.get(name) - 1);
+          }
+        }
       }
 
       // 2) Structural + unknown-type walk.
@@ -1728,6 +2038,7 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
     _actionForKind(kind) {
       switch (kind) {
         case "orphan":            return "Add the matching -start or -end, or remove this tag.";
+        case "nested-same-span":  return "Close the open span first, or use a different span name inside it.";
         case "unclosed-bracket":  return "Close with a matching ].";
         case "unclosed-paren":    return "Close with a matching ).";
         case "missing-paren":     return "Add (normalized) after the ].";
@@ -1875,6 +2186,11 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
         override: [(ctx) => self._cmComplete(ctx)],
         activateOnTyping: true,
         icons: false,
+        // CodeMirror ignores arrow and accept keys for 75 ms after a list
+        // opens, so a quick Down or Enter moved the caret out of the tag.
+        interactionDelay: 0,
+        // Likewise, the list waits 100 ms after typing before it opens.
+        activateOnTypingDelay: 0,
       });
 
       // ----- Wrap-selection / bracket-scaffold handler -----
@@ -1892,6 +2208,17 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       // the popup.
       const wrapPrefixes = new Set(["!", "#", "$", "["]);
       const wrapHandler = view.EditorView.inputHandler.of((v, from, to, insert) => {
+        // `@` over a selection wraps it in @-start / @-end, with the name
+        // left for the user to fill in (see createSpanWrap).
+        if (insert === "@" && from !== to) {
+          self._startSpanWrap(v, from, to);
+          return true;
+        }
+        // `&` over a selection wraps it as a speaker: &s-start … &s-end.
+        if (insert === "&" && from !== to) {
+          self._startSpanWrap(v, from, to, "&s");
+          return true;
+        }
         if (!wrapPrefixes.has(insert)) return false;
 
         // Case 1: selection is active — wrap it as verbatim.
@@ -2028,6 +2355,57 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
         },
       });
 
+      this._sw = createSpanWrap(state);
+      const spanKeys = view.keymap.of([
+        {
+          key: "Enter",
+          run: (v) => {
+            if (!spanNameAt(v.state, v.state.selection.main.head)) return false;
+            self._commitSpanName(v);
+            return true;
+          },
+        },
+        // Up/Down inside a span name move through the list, and never move
+        // the caret out of the tag, even while the list is still loading.
+        { key: "ArrowDown", run: (v) => self._spanNameArrow(v, true) },
+        { key: "ArrowUp", run: (v) => self._spanNameArrow(v, false) },
+        {
+          key: "Escape",
+          run: (v) => {
+            if (!v.state.field(self._sw.field, false)) return false;
+            if (autocomplete.completionStatus(v.state) === "active") return false;
+            return self._cancelSpanWrap(v);
+          },
+        },
+      ]);
+
+      // Moving the caret into a span tag's name opens the span list (typing
+      // opens it already). Deferred, since a listener may not start a
+      // completion synchronously.
+      // Also after a deletion: clearing a name down to the bare -start/-end
+      // leaves the caret in an empty name, where the list should show.
+      const openOnTagName = view.EditorView.updateListener.of((u) => {
+        if (!u.selectionSet && !u.docChanged) return;
+        if (u.docChanged && !u.transactions.some((tr) => tr.isUserEvent("delete") || tr.isUserEvent("input"))) return;
+        // Typing already keeps an open list up to date. Restarting it here
+        // would reset the highlighted entry the user has moved to.
+        if (u.docChanged && autocomplete.completionStatus(u.state)) return;
+        if (!spanNameAt(u.state, u.state.selection.main.head)) return;
+        // Started even if a list is open: that list may be for another place.
+        setTimeout(() => autocomplete.startCompletion(u.view), 0);
+      });
+
+      // Typing a bare "@" opens the tag list explicitly, rather than relying
+      // on the typing trigger alone.
+      const openOnAt = view.EditorView.updateListener.of((u) => {
+        if (!u.docChanged || !u.transactions.some((tr) => tr.isUserEvent("input"))) return;
+        let typedAt = false;
+        u.changes.iterChangedRanges((fa, ta, fb, tb) => {
+          if (u.state.sliceDoc(fb, tb) === "@") typedAt = true;
+        });
+        if (typedAt) setTimeout(() => autocomplete.startCompletion(u.view), 0);
+      });
+
       const startState = state.EditorState.create({
         doc: ta.value || "",
         extensions: [
@@ -2036,10 +2414,17 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
           commands.history(),
           rsmlComplete,
           wrapHandler,
+          this._sw.field,
+          this._sw.mirror,
+          openOnTagName,
+          openOnAt,
+          state.Prec.highest(spanKeys),
           view.keymap.of([
+            // Completion keys first: they act only while the list is open,
+            // and must win over the default Up/Down/Enter/Escape bindings.
+            ...autocomplete.completionKeymap,
             ...commands.defaultKeymap,
             ...commands.historyKeymap,
-            ...autocomplete.completionKeymap,
             { key: "Mod-z", run: commands.undo, preventDefault: true },
             { key: "Mod-Shift-z", run: commands.redo, preventDefault: true },
             { key: "Mod-y", run: commands.redo, preventDefault: true },
@@ -2279,9 +2664,150 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
       return viewMod.Decoration.set(marks);
     }
 
+    // `@` typed over a selection: wrap it as @-start<selection>@-end with
+    // the name empty, and open the span-name list in the name slot.
+    // `prefix` is "@" for a span or "&s" for a speaker. The name is left
+    // empty for the user to fill in.
+    _startSpanWrap(view, from, to, prefix = "@") {
+      const body = view.state.sliceDoc(from, to);
+      // Spaces separate the text from both tags.
+      const insert = `${prefix}-start ${body} ${prefix}-end`;
+      const nameAt = from + prefix.length;                // after the prefix of the start tag
+      const bodyFrom = nameAt + 7;                        // after "-start "
+      const bodyTo = bodyFrom + body.length;
+      const endNameAt = bodyTo + 1 + prefix.length;       // after " " and the prefix of the end tag
+      view.dispatch({
+        changes: { from, to, insert },
+        effects: this._sw.startEffect.of({
+          prefix,
+          wrap: { from, to: from + insert.length },
+          start: { from: nameAt, to: nameAt },
+          body: { from: bodyFrom, to: bodyTo },
+          end: { from: endNameAt, to: endNameAt },
+        }),
+        selection: { anchor: nameAt },
+        userEvent: "input.type",
+      });
+      setTimeout(() => this._cm.autocomplete.startCompletion(view), 0);
+    }
+
+    // Span names offered in a span tag's name: the span pairs in the tagset.
+    // `from` is where the name starts.
+    // For a speaker tag (&s), the speaker numbers: the ones already used,
+    // 1 and 2, and the next new number. For a span tag, the span pairs.
+    _tagNameOptions(tag, text) {
+      if (tag.prefix === "&s") {
+        const used = new Set([1, 2]);
+        for (const t of scanSpanTags(text)) {
+          if (t.prefix === "&s" && /^\d+$/.test(t.name)) used.add(parseInt(t.name, 10));
+        }
+        const top = Math.max(...used) + 1;
+        const options = [];
+        for (let n = 1; n <= top; n++) {
+          options.push({
+            label: String(n),
+            detail: used.has(n) ? `speaker ${n}` : "new speaker",
+            spanName: true,
+            apply: (view) => this._applySpanName(view, tag.nameFrom, String(n)),
+          });
+        }
+        return options;
+      }
+      return [...this._spanCategory.entries()].map(([base, category]) => ({
+        label: base,
+        detail: `${category} span`,
+        spanName: true,
+        apply: (view) => this._applySpanName(view, tag.nameFrom, base),
+      }));
+    }
+
+    // Sets the name of the span tag at `from`. The end tag follows through
+    // the mirror. During a new wrap this also moves the caret past the
+    // closing tag. Returns false if `name` is not a usable span name.
+    _applySpanName(view, from, name) {
+      const s = view.state.field(this._sw.field, false);
+      if (s && s.start.from === from) return this._finishSpanWrap(view, name);
+      const tag = spanNameAt(view.state, from);
+      if (!tag || tag.nameFrom !== from || !isTagName(tag.prefix, name)) return false;
+      view.dispatch({
+        changes: { from: tag.nameFrom, to: tag.nameTo, insert: name },
+        selection: { anchor: tag.nameFrom + name.length },
+        userEvent: "input.complete",
+      });
+      return true;
+    }
+
+    // Enter in a span tag's name: take the highlighted list entry if there is
+    // one, otherwise the typed name. If the list is still being computed
+    // (right after typing), wait for it, so the entry CodeMirror would pick
+    // is the one used. Gives up after about a second and uses the typed name.
+    _spanNameArrow(view, forward, tries = 40) {
+      if (!spanNameAt(view.state, view.state.selection.main.head)) return false;
+      const ac = this._cm.autocomplete;
+      const status = ac.completionStatus(view.state);
+      if (status === "pending" && tries > 0) {
+        setTimeout(() => this._spanNameArrow(view, forward, tries - 1), 25);
+      } else if (status === "active") {
+        ac.moveCompletionSelection(forward)(view);
+      }
+      return true;
+    }
+
+    _commitSpanName(view, tries = 40) {
+      const ac = this._cm.autocomplete;
+      if (ac.completionStatus(view.state) === "pending" && tries > 0) {
+        setTimeout(() => this._commitSpanName(view, tries - 1), 25);
+        return;
+      }
+      const tag = spanNameAt(view.state, view.state.selection.main.head);
+      if (!tag) return;
+      const chosen = ac.selectedCompletion(view.state);
+      if (chosen && chosen.spanName) {
+        chosen.apply(view, chosen, tag.nameFrom, tag.nameTo);
+      } else {
+        this._applySpanName(view, tag.nameFrom, view.state.sliceDoc(tag.nameFrom, tag.nameTo));
+      }
+    }
+
+    // Fills the name with `name` (it is copied to the closing tag by the
+    // mirror) and leaves the caret after the closing tag. Returns false, and
+    // changes nothing, if `name` is not a usable span name.
+    _finishSpanWrap(view, name) {
+      const s = view.state.field(this._sw.field, false);
+      if (!s || !isTagName(s.prefix, name)) return false;
+      // The caret goes after "-end" of the closing tag. It is set before the
+      // mirror runs, so it is placed in the closing tag's old text; the mirror
+      // then moves it along with the replaced name.
+      const delta = name.length - (s.start.to - s.start.from);
+      view.dispatch({
+        changes: { from: s.start.from, to: s.start.to, insert: name },
+        effects: this._sw.endEffect.of(null),
+        selection: { anchor: s.end.to + delta + 4 }, // + "-end"
+        userEvent: "input.complete",
+      });
+      return true;
+    }
+
+    // Escape before choosing a name: undo the wrap and restore the selection's text.
+    _cancelSpanWrap(view) {
+      const s = view.state.field(this._sw.field, false);
+      if (!s) return false;
+      const body = view.state.sliceDoc(s.body.from, s.body.to);
+      view.dispatch({
+        changes: { from: s.wrap.from, to: s.wrap.to, insert: body },
+        effects: this._sw.endEffect.of(null),
+        selection: { anchor: s.wrap.from + body.length },
+        userEvent: "input.complete",
+      });
+      return true;
+    }
+
     // CM completion source for @ # ! $ & prefixes, plus the doubled $$
     // (dialect) and !! (domain) prefixes.
     _cmComplete(ctx) {
+      // In a span tag's name, offer span names.
+      const tag = spanNameAt(ctx.state, ctx.pos);
+      if (tag) return { from: tag.nameFrom, options: this._tagNameOptions(tag, ctx.state.doc.toString()) };
       const trigger = ctx.matchBefore(/\$\$[\w-]*|!![\w-]*|[@#!$&][\w-]*/);
       if (!trigger) return null;
       const prefix = trigger.text.startsWith("$$") ? "$$"
@@ -2328,13 +2854,39 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
           });
         };
 
+      // Inserts a start and end tag pair at the cursor, replacing the typed
+      // trigger text, with the caret between them. `prefix` + `name` is the
+      // tag: "@" + span name, or "&s" + speaker number. The spacing matches
+      // a wrap with an empty body.
+      const pairApply = (prefix, name) =>
+        (view, completion, from, to) => {
+          const open = `${prefix}${name}-start`;
+          const close = `${prefix}${name}-end`;
+          view.dispatch({
+            changes: { from, to, insert: `${open}  ${close}` },
+            selection: { anchor: from + open.length + 1 },
+            userEvent: "input.complete",
+          });
+        };
+
       switch (prefix) {
-        case "@":
-          options = this.opts.tags.map((t) => ({
+        case "@": {
+          // Isolated tags as they are; span pairs by their bare name.
+          const isolated = [
+            ...this.opts.hesitations,
+            ...this.opts.isolatedParalinguistics,
+            ...this.opts.isolatedOther,
+          ];
+          options = isolated.map((t) => ({
             label: t,
             apply: simpleApply(t + " ", t.length + 1),
-          }));
+          })).concat([...this._spanCategory.entries()].map(([base, category]) => ({
+            label: `@${base}`,
+            detail: `${category} span`,
+            apply: pairApply("@", base),
+          })));
           break;
+        }
         case "#":
           options = [
             {
@@ -2403,16 +2955,26 @@ domain { background-color:#d4f5e9; border:1px solid #7cc9a8; }
             })),
           ];
           break;
-        case "&":
-          options = this._buildSpeakerSuggestions("").map((s) => {
-            const clean = s.replace(/ .*/, "");
+        case "&": {
+          // Speakers by number; each inserts its start and end tags.
+          const numbers = [...new Set(
+            this._buildSpeakerSuggestions("")
+              .map((s) => /^s(\d+)-/.exec(s))
+              .filter(Boolean)
+              .map((m) => parseInt(m[1], 10))
+          )].sort((a, b) => a - b);
+          options = numbers.map((n) => {
+            const isNew = this._buildSpeakerSuggestions("").some(
+              (s) => s.startsWith(`s${n}-`) && s.includes("(")
+            );
             return {
-              label: `&${clean}`,
-              detail: s.includes("(") ? "new speaker" : null,
-              apply: simpleApply(`&${clean} `, clean.length + 2),
+              label: `&s${n}`,
+              detail: isNew ? "new speaker" : "speaker",
+              apply: pairApply("&s", String(n)),
             };
           });
           break;
+        }
       }
       return { from: trigger.from, to: trigger.to, options };
     }
